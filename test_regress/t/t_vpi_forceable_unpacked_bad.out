@@ -1,0 +1,5 @@
+%Error: t/t_vpi_forceable_unpacked_bad.v:8:9: Forcing unpacked arrays is not supported (#4735): t__DOT__unpacked
+    8 |   logic unpacked[1]  /*verilator forceable*/ ;
+      |         ^~~~~~~~
+        ... See the manual at https://verilator.org/verilator_doc.html?v=latest for more assistance.
+%Error: Exiting due to
