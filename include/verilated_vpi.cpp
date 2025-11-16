@@ -2593,45 +2593,6 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
     }
 }
 
-namespace {
-
-// vpi_handle_by_name expects a non-const PLI_BYTE8* array, so this function creates a copy of the
-// const string name.
-vpiHandle vpiHandleFromString(const std::string& name) {
-    std::vector<char> nameCopy(name.begin(), name.end());
-    nameCopy.push_back('\0');
-    return vpi_handle_by_name(reinterpret_cast<PLI_BYTE8*>(nameCopy.data()), nullptr);
-}
-
-std::pair<vpiHandle, vpiHandle> getForceControlSignals(const VerilatedVpioVarBase* const vop) {
-    const std::string signalName = vop->fullname();
-    const std::string forceEnableSignalName = signalName + "__VforceEn";
-    const std::string forceValueSignalName = signalName + "__VforceVal";
-    vpiHandle forceEnableSignalp = vpiHandleFromString(forceEnableSignalName);
-    vpiHandle forceValueSignalp = vpiHandleFromString(forceValueSignalName);
-    if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceEnableSignalp))) {
-        VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: vpi force or release requested for '%s', but vpiHandle '%p' of control "
-                      "signal '%s' could not be cast to VerilatedVpioVar*. Ensure signal is "
-                      "marked as forceable",
-                      __func__, signalName.c_str(), forceEnableSignalp,
-                      forceEnableSignalName.c_str());
-        forceEnableSignalp = nullptr;
-    }
-    if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceValueSignalp))) {
-        VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: vpi force or release requested for '%s', but vpiHandle '%p' of value "
-                      "signal '%s' could not be cast to VerilatedVpioVar*. Ensure signal is "
-                      "marked as forceable",
-                      __func__, signalName.c_str(), forceValueSignalp,
-                      forceValueSignalName.c_str());
-        forceValueSignalp = nullptr;
-    }
-    return {forceEnableSignalp, forceValueSignalp};
-};
-
-}  //namespace
-
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
     void* const varDatap = vop->varDatap();
@@ -2752,71 +2713,13 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         }
     } else if (valuep->format == vpiIntVal) {
         if (VL_UNLIKELY(vop->varp()->isForceable())) {
-            // TODO: __VforceRd already has the correct value, but that signal is not available
-            const auto forceControlSignals = getForceControlSignals(vop);
-            const vpiHandle& forceEnableSignalp = forceControlSignals.first;
-            const vpiHandle& forceValueSignalp = forceControlSignals.second;
-            if (!forceEnableSignalp || !forceValueSignalp) return;
-
-            s_vpi_value value_s;
-            value_s.format = vpiIntVal;
-            value_s.value.integer = 0;
-            int signal_value = 0;
-
-            const VerilatedVpioVarBase* const forceEnableVop
-                = VerilatedVpioVarBase::castp(forceEnableSignalp);
-            const VerilatedVpioVarBase* const forceValueVop
-                = VerilatedVpioVarBase::castp(forceValueSignalp);
-            vl_vpi_get_value(forceEnableVop, &value_s);
-
-            t_vpi_error_info forceEnableGetError{};
-            const bool errorOccurred = vpi_chk_error(&forceEnableGetError);
-            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-            if (VL_UNLIKELY(errorOccurred && forceEnableGetError.level >= vpiError)) {
-                std::string forceEnableSignalName
-                    = VerilatedVpioVar::castp(forceEnableSignalp)->fullname();
-                std::string previousErrorMessage = forceEnableGetError.message;
-                VL_VPI_ERROR_(__FILE__, __LINE__,
-                              "%s: Could not retrieve value of force enable signal '%s' with "
-                              "vpiHandle '%p'. Error message: %s",
-                              __func__, forceEnableSignalName.c_str(), forceEnableSignalp,
-                              previousErrorMessage.c_str());
-                return;
-            }
-            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-            if (VL_UNLIKELY(errorOccurred && forceEnableGetError.level < vpiError)) {
-                vpi_printf(forceEnableGetError.message);
-                VL_VPI_ERROR_RESET_();
-            }
-
-            if (const bool forceActive = value_s.value.integer != 0) {
-                vl_vpi_get_value(forceValueVop, &value_s);
-
-                t_vpi_error_info forceValueGetError{};
-                const bool errorOccurred = vpi_chk_error(&forceValueGetError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level >= vpiError)) {
-                    std::string forceValueSignalName
-                        = VerilatedVpioVar::castp(forceValueSignalp)->fullname();
-                    std::string previousErrorMessage = forceValueGetError.message;
-                    VL_VPI_ERROR_(__FILE__, __LINE__,
-                                  "%s: Could not retrieve value of force value signal '%s' with "
-                                  "vpiHandle '%p'. Error message: %s",
-                                  __func__, forceValueSignalName.c_str(), forceValueSignalp,
-                                  previousErrorMessage.c_str());
-                    return;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level < vpiError)) {
-                    vpi_printf(forceValueGetError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
-
-                valuep->value.integer = value_s.value.integer;
-                return;
-            }
+            std::weak_ptr<VerilatedVar> forceReadSignalp = vop->varp()->forceReadSignal();
+            VerilatedVpioVarBase forceReadSignalVpioVar{
+                forceReadSignalp.lock().get(), vop->scopep()};  // Same scope as base signal
+            valuep->value.integer = vl_vpi_get_word(&forceReadSignalVpioVar, 32, 0);
+        } else {
+            valuep->value.integer = vl_vpi_get_word(vop, 32, 0);
         }
-        valuep->value.integer = vl_vpi_get_word(vop, 32, 0);
         return;
     } else if (valuep->format == vpiRealVal) {
         valuep->value.real = *(vop->varRealDatap());
@@ -3024,91 +2927,33 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             return object;
         } else if (valuep->format == vpiIntVal) {
             if (forceFlag == vpiForceFlag) {
-                const auto forceControlSignals = getForceControlSignals(vop);
-                const vpiHandle& forceEnableSignalp = forceControlSignals.first;
-                const vpiHandle& forceValueSignalp = forceControlSignals.second;
-                if (!forceEnableSignalp || !forceValueSignalp) return nullptr;
-
-                // Enable __VforceEn
-                s_vpi_value value_s;
-                value_s.format = vpiIntVal;
-                value_s.value.integer = -1;
-                vpi_put_value(forceEnableSignalp, &value_s, nullptr, vpiNoDelay);
-
-                t_vpi_error_info forceEnablePutError{};
-                const bool errorOccurred = vpi_chk_error(&forceEnablePutError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceEnablePutError.level >= vpiError)) {
-                    std::string forceEnableSignalName
-                        = VerilatedVpioVar::castp(forceEnableSignalp)->fullname();
-                    std::string previousErrorMessage = forceEnablePutError.message;
-                    VL_VPI_ERROR_(
-                        __FILE__, __LINE__,
-                        "%s: Could not set force control signal '%s' with vpiHandle '%p' to "
-                        "value '%i'. Error message: %s",
-                        __func__, forceEnableSignalName.c_str(), forceEnableSignalp,
-                        value_s.value.integer, previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceEnablePutError.level < vpiError)) {
-                    vpi_printf(forceEnablePutError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
-
-                // Set __VforceVal to forced value
-                const VerilatedVpioVar* const forceValueVop
-                    = VerilatedVpioVar::castp(forceValueSignalp);
-                vl_vpi_put_word(forceValueVop, valuep->value.integer, 64, 0);
+                const auto forceControlSignals = vop->varp()->forceControlSignals();
+                const VerilatedVar* const forceEnableSignalp = forceControlSignals.first;
+                const VerilatedVar* const forceValueSignalp = forceControlSignals.second;
+                const VerilatedVpioVar forceEnableSignalVpioVar{
+                    forceEnableSignalp, vop->scopep()};  // Same scope as base signal
+                const VerilatedVpioVar forceValueSignalVpioVar{
+                    forceValueSignalp, vop->scopep()};  // Same scope as base signal
+                vl_vpi_put_word(&forceEnableSignalVpioVar, -1, 64, 0);  // Enable __VforceEn
+                vl_vpi_put_word(&forceValueSignalVpioVar, valuep->value.integer, 64,
+                                0);  // Set __VforceVal to forced value
             } else if (forceFlag == vpiReleaseFlag) {
-                const auto forceControlSignals = getForceControlSignals(vop);
-                const vpiHandle& forceEnableSignalp = forceControlSignals.first;
-                const vpiHandle& forceValueSignalp = forceControlSignals.second;
-                if (!forceEnableSignalp || !forceValueSignalp) return nullptr;
-
-                // Step 1: Deactivate __VforceEn
-                s_vpi_value value_s;
-                value_s.format = vpiIntVal;
-                value_s.value.integer = 0;
-                vpi_put_value(forceEnableSignalp, &value_s, nullptr, vpiNoDelay);
-
-                t_vpi_error_info forceEnablePutError{};
-                const bool errorOccurred = vpi_chk_error(&forceEnablePutError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceEnablePutError.level >= vpiError)) {
-                    std::string forceEnableSignalName
-                        = VerilatedVpioVar::castp(forceEnableSignalp)->fullname();
-                    std::string previousErrorMessage = forceEnablePutError.message;
-                    VL_VPI_ERROR_(
-                        __FILE__, __LINE__,
-                        "%s: Could not set force control signal '%s' with vpiHandle '%p' to "
-                        "value '%i'. Error message: %s",
-                        __func__, forceEnableSignalName.c_str(), forceEnableSignalp,
-                        value_s.value.integer, previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceEnablePutError.level < vpiError)) {
-                    vpi_printf(forceEnablePutError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
-
-                const VerilatedVpioVar* forceValueSignalVop
-                    = VerilatedVpioVar::castp(forceValueSignalp);
+                const auto forceControlSignals = vop->varp()->forceControlSignals();
+                const VerilatedVar* const forceEnableSignalp = forceControlSignals.first;
+                const VerilatedVar* const forceValueSignalp = forceControlSignals.second;
+                const VerilatedVpioVar forceEnableSignalVpioVar{
+                    forceEnableSignalp, vop->scopep()};  // Same scope as base signal
+                const VerilatedVpioVar forceValueSignalVpioVar{
+                    forceValueSignalp, vop->scopep()};  // Same scope as base signal
+                vl_vpi_put_word(&forceEnableSignalVpioVar, 0, 64,
+                                0);  // Step 1: Deactivate __VforceEn
 
                 // Step 2: Set valuep
-                const bool isClocked
-                    = true;  // TODO: valuep should be set to the value of the signal after
-                             // release. For clocked signals, this means the signal retains the
-                             // forced value until it is clocked again, for assigned signals
-                             // this means it should get the value it was assigned to. Need to
-                             // implement the ability to find out if the signal is clocked or
-                             // assigned.
-                if (isClocked) {
-                    valuep->value.integer = *(forceValueSignalVop->varCDatap());
-                } else {
-                    valuep->value.integer = *(vop->varCDatap());
-                }
+                // If assigned continuously, signal will be reset to its base signal's value,
+                // otherwise it will stay at the force value until an event triggers an update
+                valuep->value.integer = vop->varp()->isContinuously()
+                                            ? *(vop->varCDatap())
+                                            : *(forceValueSignalVpioVar.varCDatap());
 
                 return object;  // TODO: According to the SystemVerilog specification,
                                 // vpi_put_value should return a handle to the scheduled event

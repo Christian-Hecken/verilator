@@ -1,3 +1,8 @@
+// ======================================================================
+// This file ONLY is placed under the Creative Commons Public Domain, for
+// any use, without warranty.
+// SPDX-License-Identifier: CC0-1.0
+// ======================================================================
 #ifdef IS_VPI
 
 #include "verilated.h"  // For VL_PRINTF
@@ -23,6 +28,7 @@ constexpr PLI_INT32 forceValue = 0;
 constexpr PLI_INT32 releaseValue = 1;
 constexpr int maxAllowedErrorLevel = vpiWarning;
 const std::string testSignalName = "t.test.clockedReg";
+const bool testSignalIsAssignedContinuously = false;
 
 namespace {
 
@@ -103,11 +109,9 @@ extern "C" int releaseValues(void) {
     vpi_put_value(signalp, &value_s, nullptr, vpiReleaseFlag);
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
-    // TODO: Correct value for value_s is not implemented yet in vpi_put_value with vpiReleaseFlag,
-    // so for now it will always return the force value.
-
     // NOLINTNEXTLINE(concurrency-mt-unsafe, performance-avoid-endl);
-    CHECK_RESULT(value_s.value.integer, forceValue)
+    CHECK_RESULT(value_s.value.integer,
+                 testSignalIsAssignedContinuously ? releaseValue : forceValue)
 
     return 0;
 }

@@ -45,6 +45,7 @@
 //     and DPI libraries are not needed there.
 //=========================================================================
 
+#include "verilated.h"
 #define VERILATOR_VERILATED_CPP_
 
 #include "verilated_config.h"
@@ -3505,9 +3506,9 @@ void VerilatedScope::exportInsert(int finalize, const char* namep, void* cb) VL_
     }
 }
 
-void VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
-                               VerilatedVarType vltype, int vlflags, int udims,
-                               int pdims...) VL_MT_UNSAFE {
+VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
+                                        VerilatedVarType vltype, int vlflags, int udims,
+                                        int pdims...) VL_MT_UNSAFE {
     // Grab dimensions
     // In the future we may just create a large table at emit time and
     // statically construct from that.
@@ -3533,6 +3534,38 @@ void VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
     va_end(ap);
 
     m_varsp->emplace(namep, var);
+    return &(m_varsp->find(namep)->second);
+}
+
+VerilatedVar* VerilatedScope::forceableVarInsert(
+    const char* namep, void* datap, bool isParam, VerilatedVarType vltype, int vlflags,
+    bool isContinuously, void* forceReadSignalData,
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals) VL_MT_UNSAFE {
+    if (!m_varsp) m_varsp = new VerilatedVarNameMap;
+    const std::string* forceReadSignalName = new std::string{
+        std::string{namep}
+        + "__VforceRd"};  // WARNING: Yes, I know this causes a memory leak. I haven't yet come up
+                          // with a way to give VerilatedVar's constructor a persistent name char*
+                          // that also gets cleaned up properly.
+    std::unique_ptr<VerilatedVar> forceReadSignalp
+        = std::unique_ptr<VerilatedVar>(new VerilatedVar(
+            forceReadSignalName->c_str(), forceReadSignalData, vltype,
+            static_cast<VerilatedVarFlags>(vlflags), 0, 0,
+            false));  // TODO: This should not be using the same vltype and vlflags as the base
+                      // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
+                      // signal and give its vltype and vlflags to this function as arguments.
+
+    VerilatedVar var{namep,
+                     datap,
+                     vltype,
+                     static_cast<VerilatedVarFlags>(vlflags),
+                     isParam,
+                     isContinuously,
+                     std::move(forceReadSignalp),
+                     forceControlSignals};
+
+    m_varsp->emplace(namep, std::move(var));
+    return &(m_varsp->find(namep)->second);
 }
 
 // cppcheck-suppress unusedFunction  // Used by applications

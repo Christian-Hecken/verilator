@@ -281,19 +281,6 @@ class EmitCSyms final : EmitCBaseVisitorConst {
             for (const auto& scp : m_dpiScopeNames) m_scopeNames.emplace(scp.first, scp.second);
         }
 
-        // Sort by names, so line/process order matters less
-        std::stable_sort(m_scopes.begin(), m_scopes.end(),
-                         [](const ScopeModPair& a, const ScopeModPair& b) {
-                             return a.first->name() < b.first->name();
-                         });
-        std::stable_sort(m_dpis.begin(), m_dpis.end(),  //
-                         [](const AstCFunc* ap, const AstCFunc* bp) {
-                             if (ap->dpiImportPrototype() != bp->dpiImportPrototype()) {
-                                 return bp->dpiImportPrototype();
-                             }
-                             return ap->name() < bp->name();
-                         });
-
         // Output
         if (!m_dpiHdrOnly) {
             // Must emit implementation first to determine number of splits
@@ -766,8 +753,8 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
     // It would be less code if each module inserted its own variables. Someday.
     if (!m_scopeVars.empty()) {
         add("// Setup public variables");
-        for (const auto& itpair : m_scopeVars) {
-            const ScopeVarData& svd = itpair.second;
+        for (auto itpair = m_scopeVars.rbegin(); itpair != m_scopeVars.rend(); ++itpair) {
+            const ScopeVarData& svd = itpair->second;
             const AstScope* const scopep = svd.m_scopep;
             const AstVar* const varp = svd.m_varp;
             int pdim = 0;
@@ -802,8 +789,14 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             }
 
             std::string stmt;
-            stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
-            stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+            if (varp->isForceable()) {
+                stmt += protect("__Vscopep_" + svd.m_scopeName) + "->forceableVarInsert(\"";
+                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+            } else {
+                stmt += "VerilatedVar* " + svd.m_varBasePretty + "_varp = ";
+                stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
+                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+            }
 
             const std::string varName
                 = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
@@ -827,11 +820,21 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             stmt += varp->vlEnumType();  // VLVT_UINT32 etc
             stmt += ", ";
             stmt += varp->vlEnumDir();  // VLVD_IN etc
-            stmt += ", ";
-            stmt += std::to_string(udim);
-            stmt += ", ";
-            stmt += std::to_string(pdim);
-            stmt += bounds;
+            if (varp->isForceable()) {
+                stmt += ", " + std::string(varp->isContinuously() ? "true" : "false");
+                stmt += ", &(";
+                stmt += varName + "__VforceRd";
+                stmt += "), {";
+                stmt += svd.m_varBasePretty + "__VforceEn_varp,";
+                stmt += svd.m_varBasePretty + "__VforceVal_varp,";
+                stmt += "}";
+            } else {
+                stmt += ", ";
+                stmt += std::to_string(udim);
+                stmt += ", ";
+                stmt += std::to_string(pdim);
+                stmt += bounds;
+            }
             stmt += ");";
             add(stmt);
         }
