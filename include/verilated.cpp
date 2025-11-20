@@ -3537,23 +3537,30 @@ VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isP
     return &(m_varsp->find(namep)->second);
 }
 
-VerilatedVar* VerilatedScope::forceableVarInsert(
-    const char* namep, void* datap, bool isParam, VerilatedVarType vltype, int vlflags,
-    bool isContinuously, void* forceReadSignalData,
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals) VL_MT_UNSAFE {
+VerilatedVar*
+VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
+                                   VerilatedVarType vltype, int vlflags, bool isContinuously,
+                                   void* forceReadSignalData,
+                                   std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
+                                   int udims, int pdims...) VL_MT_UNSAFE {
+    // TODO: Use udims & pdims
     if (!m_varsp) m_varsp = new VerilatedVarNameMap;
     const std::string* forceReadSignalName = new std::string{
         std::string{namep}
         + "__VforceRd"};  // WARNING: Yes, I know this causes a memory leak. I haven't yet come up
                           // with a way to give VerilatedVar's constructor a persistent name char*
                           // that also gets cleaned up properly.
-    std::unique_ptr<VerilatedVar> forceReadSignalp
-        = std::unique_ptr<VerilatedVar>(new VerilatedVar(
-            forceReadSignalName->c_str(), forceReadSignalData, vltype,
-            static_cast<VerilatedVarFlags>(vlflags), 0, 0,
-            false));  // TODO: This should not be using the same vltype and vlflags as the base
-                      // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
-                      // signal and give its vltype and vlflags to this function as arguments.
+
+    // const VerilatedVarFlags forceReadValueVlflags = static_cast<VerilatedVarFlags>(
+    //     varp->vldir() & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
+    //     TODO: Remove flags
+
+    std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
+        new VerilatedVar(forceReadSignalName->c_str(), forceReadSignalData, vltype,
+                         static_cast<VerilatedVarFlags>(vlflags), 0, 0, false));
+    // TODO: This should not be using the same vltype and vlflags as the base
+    // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
+    // signal and give its vltype and vlflags to this function as arguments.
 
     VerilatedVar var{namep,
                      datap,

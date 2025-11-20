@@ -24,6 +24,7 @@
 #include "V3Stats.h"
 
 #include <algorithm>
+#include <cstring>
 #include <map>
 #include <vector>
 
@@ -170,6 +171,252 @@ class EmitCSyms final : EmitCBaseVisitorConst {
 
         return pos != std::string::npos ? scpname.substr(pos + 1) : scpname;
     }
+
+    static std::tuple<int, int, std::string> get_dimensions(const AstVar* const varp) {
+        int pdim = 0;
+        int udim = 0;
+        std::string bounds;
+        if (const AstBasicDType* const basicp = varp->basicp()) {
+            // Range is always first, it's not in "C" order
+            for (AstNodeDType* dtypep = varp->dtypep(); dtypep;) {
+                // Skip AstRefDType/AstTypedef, or return same node
+                dtypep = dtypep->skipRefp();
+                if (const AstNodeArrayDType* const adtypep = VN_CAST(dtypep, NodeArrayDType)) {
+                    bounds += " ,";
+                    bounds += std::to_string(adtypep->left());
+                    bounds += ",";
+                    bounds += std::to_string(adtypep->right());
+                    if (VN_IS(dtypep, PackArrayDType))
+                        pdim++;
+                    else
+                        udim++;
+                    dtypep = adtypep->subDTypep();
+                } else {
+                    if (basicp->isRanged()) {
+                        bounds += " ,";
+                        bounds += std::to_string(basicp->left());
+                        bounds += ",";
+                        bounds += std::to_string(basicp->right());
+                        pdim++;
+                    }
+                    break;  // AstBasicDType - nothing below, 1
+                }
+            }
+        }
+        return {pdim, udim, bounds};
+    }
+
+    static std::string insert_var_statement(const ScopeVarData& svd, const AstScope* const scopep,
+                                            const AstVar* const varp, const int udim,
+                                            const int pdim, const std::string& bounds) {
+        std::string stmt;
+        stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
+        stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+
+        const std::string varName = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
+                                    + "." + protect(varp->name());
+
+        if (!varp->isParam()) {
+            stmt += ", &(";
+            stmt += varName;
+            stmt += "), false, ";
+        } else if (varp->vlEnumType() == "VLVT_STRING"
+                   && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
+            stmt += ", const_cast<void*>(static_cast<const void*>(";
+            stmt += varName;
+            stmt += ".c_str())), true, ";
+        } else {
+            stmt += ", const_cast<void*>(static_cast<const void*>(&(";
+            stmt += varName;
+            stmt += "))), true, ";
+        }
+
+        stmt += varp->vlEnumType();  // VLVT_UINT32 etc
+        stmt += ", ";
+        stmt += varp->vlEnumDir();  // VLVD_IN etc
+        stmt += ", ";
+        stmt += std::to_string(udim);
+        stmt += ", ";
+        stmt += std::to_string(pdim);
+        stmt += bounds;
+        stmt += ")";
+        return stmt;
+    }
+
+    std::string insert_forceable_var_statement(const ScopeVarData& svd,
+                                               const AstScope* const scopep,
+                                               const AstVar* const varp, const int udim,
+                                               const int pdim, const std::string& bounds) {
+        std::string stmt;
+
+        stmt += protect("__Vscopep_" + svd.m_scopeName) + "->forceableVarInsert(\"";
+        stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+
+        const std::string varName = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
+                                    + "." + protect(varp->name());
+
+        if (!varp->isParam()) {
+            stmt += ", &(";
+            stmt += varName;
+            stmt += "), false, ";
+        } else if (varp->vlEnumType() == "VLVT_STRING"
+                   && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
+            stmt += ", const_cast<void*>(static_cast<const void*>(";
+            stmt += varName;
+            stmt += ".c_str())), true, ";
+        } else {
+            stmt += ", const_cast<void*>(static_cast<const void*>(&(";
+            stmt += varName;
+            stmt += "))), true, ";
+        }
+
+        stmt += varp->vlEnumType();  // VLVT_UINT32 etc
+        stmt += ", ";
+        stmt += varp->vlEnumDir();  // VLVD_IN etc
+        stmt += ", " + std::string(varp->isContinuously() ? "true" : "false");
+        stmt += ", &(";
+        stmt += varName + "__VforceRd";
+        stmt += "), {";
+
+        // Find __VforceEn
+        {
+            const std::map<const std::string, ScopeVarData>::const_iterator itpair
+                = m_scopeVars.find(
+                    get_key_name(scopep, varp->name() + "__VforceEn"));  // TODO: Check validity
+
+            const ScopeVarData& svd = itpair->second;
+            const AstScope* const scopep = svd.m_scopep;
+            const AstVar* const varp = svd.m_varp;
+            const std::tuple<int, int, std::string> dimensions = get_dimensions(varp);
+            const int pdim = std::get<0>(dimensions);
+            const int udim = std::get<1>(dimensions);
+            const std::string bounds = std::get<2>(dimensions);
+            stmt += insert_var_statement(svd, scopep, varp, udim, pdim, bounds);
+        }
+        stmt += ",";
+        // Find __VforceVal
+        {
+            const std::map<const std::string, ScopeVarData>::const_iterator itpair
+                = m_scopeVars.find(
+                    get_key_name(scopep, varp->name() + "__VforceVal"));  // TODO: Check validity
+
+            const ScopeVarData& svd = itpair->second;
+            const AstScope* const scopep = svd.m_scopep;
+            const AstVar* const varp = svd.m_varp;
+            const std::tuple<int, int, std::string> dimensions = get_dimensions(varp);
+            const int pdim = std::get<0>(dimensions);
+            const int udim = std::get<1>(dimensions);
+            const std::string bounds = std::get<2>(dimensions);
+            stmt += insert_var_statement(svd, scopep, varp, udim, pdim, bounds);
+        }
+
+        stmt += "}";
+        stmt += ", ";
+        stmt += std::to_string(udim);
+        stmt += ", ";
+        stmt += std::to_string(pdim);
+        stmt += bounds;
+        stmt += ")";
+        return stmt;
+    }
+
+    static std::string get_key_name(const AstScope* const scopep, const std::string& signal_name) {
+        // TODO: Explain
+        std::string whole = scopep->name() + "__DOT__" + signal_name;
+        std::string scpName;
+        if (VString::startsWith(whole, "__DOT__TOP")) whole.replace(0, 10, "");
+        const std::string::size_type dpos = whole.rfind("__DOT__");
+        if (dpos != std::string::npos) { scpName = whole.substr(0, dpos); }
+        const std::string scpSym = scopeSymString(VName::dehash(scpName));
+        return scpSym + " " + signal_name;
+    }
+
+    bool base_signal_is_valid(const AstScope* const scopep,
+                              const AstVar* const control_signal_varp,
+                              const std::string& base_signal_name) const {
+        const std::string base_signal_key = get_key_name(scopep, base_signal_name);
+        const std::map<const std::string, ScopeVarData>::const_iterator base_signal_it
+            = m_scopeVars.find(base_signal_key);
+        if (base_signal_it == m_scopeVars.end()) {
+            control_signal_varp->v3error("Found signal "
+                                         //<< control_signal_varp->prettyNameQ() // TODO: RESTORE
+                                         << control_signal_varp->name()
+                                         << " which is a force control signal, but could not find "
+                                            "corresponding forceable base signal "
+                                         << base_signal_name);
+            return false;
+        } else {
+            const AstVar* const base_signal_varp = base_signal_it->second.m_varp;
+            if (m_scopeVars.count(base_signal_name) > 1) {
+                base_signal_varp->v3error("Found Signal "
+                                          << base_signal_name
+                                          << ", but also found at least one other signal with name"
+                                          << base_signal_name << " occurring in the same scope.");
+                return false;
+            }
+            if (!base_signal_varp->isForceable()) {
+                control_signal_varp->v3error(
+                    "Found signal " << control_signal_varp->prettyNameQ()
+                                    << " which is a force control signal, but the base signal "
+                                    << base_signal_varp->prettyNameQ()
+                                    << " is not marked as forceable.");
+                return false;
+            }
+        }
+        return true;
+    };
+
+    std::pair<bool, std::string>
+    check_if_force_control_signal(const AstScope* const scopep,
+                                  const AstVar* const signal_varp) const {
+        for (const std::string force_control_suffix :
+             {"__VforceEn", "__VforceVal", "__VforceRd"}) {
+            const std::size_t suffix_pos = signal_varp->name().find(force_control_suffix);
+            const bool is_force_control_signal
+                = (suffix_pos != std::string::npos)
+                  && (suffix_pos + force_control_suffix.length() == signal_varp->name().length());
+            if (!is_force_control_signal) continue;
+            const std::string base_signal_name
+                = signal_varp->name().substr(0, suffix_pos);  // TODO: Throws?
+            if (is_force_control_signal
+                && base_signal_is_valid(scopep, signal_varp, base_signal_name)) {
+                return std::pair<bool, std::string>{true, base_signal_name};
+            }
+        }
+        return std::pair<bool, std::string>{false, ""};
+    };
+
+    bool force_control_signals_are_valid(const AstScope* const scopep,
+                                         const AstVar* const base_signal_varp) const {
+        //constexpr std::array force_control_suffixes
+        //    = {"__VforceEn", "__VforceVal", "__VforceRd"};  // TODO: Not __VforceRd
+        constexpr std::array force_control_suffixes = {"__VforceEn", "__VforceVal"};
+        return std::all_of(
+            force_control_suffixes.begin(), force_control_suffixes.end(),
+            [scopep, base_signal_varp, this](const std::string& force_control_suffix) {
+                const std::string control_signal_name
+                    = base_signal_varp->name() + force_control_suffix;
+                const std::string control_signal_key = get_key_name(scopep, control_signal_name);
+                const std::size_t control_signal_count = m_scopeVars.count(control_signal_key);
+                if (control_signal_count == 0) {
+                    base_signal_varp
+                        ->v3error("Signal "
+                                  // << base_signal_varp->prettyNameQ() // TODO: RESTORE
+                                  << base_signal_varp->name()
+                                  << " is marked forceable, but the control signal '"
+                                  << control_signal_name << "' can not be found.");
+                    return false;
+                }
+                if (control_signal_count > 1) {
+                    base_signal_varp->v3error("The control signal '"
+                                              << control_signal_name << "' for forceable signal "
+                                              << base_signal_varp->prettyNameQ()
+                                              << " occurs several times within the same scope.");
+                    return false;
+                }
+                return true;
+            });
+    };
 
     /// (scp, m_vpiScopeCandidates, m_scopeNames) -> m_scopeNames
     /// Look for parent scopes of scp in m_vpiScopeCandidates (separated by __DOT__ or ".")
@@ -757,86 +1004,26 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const ScopeVarData& svd = itpair->second;
             const AstScope* const scopep = svd.m_scopep;
             const AstVar* const varp = svd.m_varp;
-            int pdim = 0;
-            int udim = 0;
-            std::string bounds;
-            if (const AstBasicDType* const basicp = varp->basicp()) {
-                // Range is always first, it's not in "C" order
-                for (AstNodeDType* dtypep = varp->dtypep(); dtypep;) {
-                    // Skip AstRefDType/AstTypedef, or return same node
-                    dtypep = dtypep->skipRefp();
-                    if (const AstNodeArrayDType* const adtypep = VN_CAST(dtypep, NodeArrayDType)) {
-                        bounds += " ,";
-                        bounds += std::to_string(adtypep->left());
-                        bounds += ",";
-                        bounds += std::to_string(adtypep->right());
-                        if (VN_IS(dtypep, PackArrayDType))
-                            pdim++;
-                        else
-                            udim++;
-                        dtypep = adtypep->subDTypep();
-                    } else {
-                        if (basicp->isRanged()) {
-                            bounds += " ,";
-                            bounds += std::to_string(basicp->left());
-                            bounds += ",";
-                            bounds += std::to_string(basicp->right());
-                            pdim++;
-                        }
-                        break;  // AstBasicDType - nothing below, 1
-                    }
-                }
+            const std::tuple<int, int, std::string> dimensions = get_dimensions(varp);
+            const int pdim = std::get<0>(dimensions);
+            const int udim = std::get<1>(dimensions);
+            const std::string bounds = std::get<2>(dimensions);
+
+            auto [is_force_control_signal, base_signal_name]
+                = check_if_force_control_signal(scopep, varp);  // TODO: C++14 change
+            if (is_force_control_signal && base_signal_is_valid(scopep, varp, base_signal_name)) {
+                continue;
             }
 
-            std::string stmt;
-            if (varp->isForceable()) {
-                stmt += protect("__Vscopep_" + svd.m_scopeName) + "->forceableVarInsert(\"";
-                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+            if (varp->isForceable() && force_control_signals_are_valid(scopep, varp)) {
+                const std::string stmt
+                    = insert_forceable_var_statement(svd, scopep, varp, udim, pdim, bounds) + ";";
+                add(stmt);
             } else {
-                stmt += "VerilatedVar* " + svd.m_varBasePretty + "_varp = ";
-                stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
-                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+                const std::string stmt
+                    = insert_var_statement(svd, scopep, varp, udim, pdim, bounds) + ";";
+                add(stmt);
             }
-
-            const std::string varName
-                = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
-                  + protect(varp->name());
-
-            if (!varp->isParam()) {
-                stmt += ", &(";
-                stmt += varName;
-                stmt += "), false, ";
-            } else if (varp->vlEnumType() == "VLVT_STRING"
-                       && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
-                stmt += ", const_cast<void*>(static_cast<const void*>(";
-                stmt += varName;
-                stmt += ".c_str())), true, ";
-            } else {
-                stmt += ", const_cast<void*>(static_cast<const void*>(&(";
-                stmt += varName;
-                stmt += "))), true, ";
-            }
-
-            stmt += varp->vlEnumType();  // VLVT_UINT32 etc
-            stmt += ", ";
-            stmt += varp->vlEnumDir();  // VLVD_IN etc
-            if (varp->isForceable()) {
-                stmt += ", " + std::string(varp->isContinuously() ? "true" : "false");
-                stmt += ", &(";
-                stmt += varName + "__VforceRd";
-                stmt += "), {";
-                stmt += svd.m_varBasePretty + "__VforceEn_varp,";
-                stmt += svd.m_varBasePretty + "__VforceVal_varp,";
-                stmt += "}";
-            } else {
-                stmt += ", ";
-                stmt += std::to_string(udim);
-                stmt += ", ";
-                stmt += std::to_string(pdim);
-                stmt += bounds;
-            }
-            stmt += ");";
-            add(stmt);
         }
     }
 
