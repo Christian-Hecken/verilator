@@ -3533,7 +3533,7 @@ VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isP
     }
     va_end(ap);
 
-    m_varsp->emplace(namep, var);
+    m_varsp->emplace(namep, std::move(var));
     return &(m_varsp->find(namep)->second);
 }
 
@@ -3561,6 +3561,9 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
     // TODO: This should not be using the same vltype and vlflags as the base
     // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
     // signal and give its vltype and vlflags to this function as arguments.
+
+    // std::unique_ptr<ForceableInfo> ForceableInfop = std::make_unique<ForceableInfo>(
+    //     forceControlSignals, std::move(forceReadSignalp), isContinuously);
 
     VerilatedVar var{namep,
                      datap,

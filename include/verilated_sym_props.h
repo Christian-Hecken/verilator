@@ -262,6 +262,29 @@ public:
 };
 
 //===========================================================================
+// Forceable Verilator variable metadata about force control signals and assignment type
+// Thread safety: No idea. Probably not.
+
+class VerilatedVar;
+class ForceableInfo final {
+    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{nullptr, nullptr};
+    const std::shared_ptr<VerilatedVar> m_forceReadSignalp{nullptr};
+    const bool m_isContinuously;
+
+public:
+    ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
+                  std::unique_ptr<VerilatedVar> forceReadSignalp, const bool isContinuously)
+        : m_forceControlSignals(forceControlSignals)
+        , m_forceReadSignalp(std::move(forceReadSignalp))
+        , m_isContinuously(isContinuously) {}
+    std::weak_ptr<VerilatedVar> forceReadSignal() const { return m_forceReadSignalp; }
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const {
+        return m_forceControlSignals;
+    }
+    bool isContinuously() const { return m_isContinuously; }
+};
+
+//===========================================================================
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
@@ -269,6 +292,8 @@ class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
+    std::unique_ptr<const ForceableInfo> m_forceableInfo;
+
 protected:
     const bool m_isParam;
     const bool m_isContinuously;
@@ -293,6 +318,7 @@ protected:
 
 public:
     ~VerilatedVar() = default;
+    VerilatedVar(VerilatedVar&&) = default;
     // ACCESSORS
     void* datap() const { return m_datap; }
     const char* name() const { return m_namep; }
