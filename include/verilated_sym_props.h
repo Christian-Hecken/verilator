@@ -253,9 +253,11 @@ public:
 
 class VerilatedVar;
 class ForceableInfo final {
-    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{nullptr, nullptr};
-    const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};
-    const bool m_isContinuously;
+    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
+        nullptr, nullptr};  // __VforceEn and __VforceVal control signals
+    const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};  // __VforceRd signal
+    const bool m_isContinuously;  // Whether the signal is continuously assigned. Relevant for
+                                  // releasing forced signal.
 
 public:
     ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
@@ -279,7 +281,9 @@ class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const std::string m_name;  // Name - slowpath
-    std::unique_ptr<const ForceableInfo> m_forceableInfo;
+    std::unique_ptr<const ForceableInfo>
+        m_forceableInfo;  // Force control signals, Read signal and information about signal
+                          // assignment (continuous or not)
 
 protected:
     const bool m_isParam;
