@@ -3545,31 +3545,43 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
                                    void* forceReadSignalData,
                                    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
                                    int udims, int pdims...) VL_MT_UNSAFE {
-    // TODO: Use udims & pdims
     if (!m_varsp) m_varsp = new VerilatedVarNameMap;
-    const std::string* forceReadSignalName = new std::string{
-        std::string{namep}
-        + "__VforceRd"};  // WARNING: Yes, I know this causes a memory leak. I haven't yet come up
-                          // with a way to give VerilatedVar's constructor a persistent name char*
-                          // that also gets cleaned up properly.
 
-    // const VerilatedVarFlags forceReadValueVlflags = static_cast<VerilatedVarFlags>(
-    //     varp->vldir() & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
-    //     TODO: Remove flags
+    // Use same flags as base signal, but remove forceable and public flags
+    const VerilatedVarFlags forceReadValueVlflags
+        = static_cast<VerilatedVarFlags>(vlflags & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
 
     std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
-        new VerilatedVar(forceReadSignalName->c_str(), forceReadSignalData, vltype,
-                         static_cast<VerilatedVarFlags>(vlflags), 0, 0, false));
-    // TODO: This should not be using the same vltype and vlflags as the base
-    // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
-    // signal and give its vltype and vlflags to this function as arguments.
+        new VerilatedVar{std::string{namep} + "__VforceRd", forceReadSignalData, vltype,
+                         forceReadValueVlflags, 0, 0, false});
+    // TODO: While the force read signal would be *expected* to have the same vltype and vlflags
+    // (except for forceable and public flags) as the base signal, this is not guaranteed. It would
+    // be a safer solution to adapt V3EmitCSyms to find the __VforceRd signal and give its vltype
+    // and vlflags to this function as arguments.
 
     std::unique_ptr<ForceableInfo> ForceableInfop = std::make_unique<ForceableInfo>(
         forceControlSignals, std::move(forceReadSignalp), isContinuously);
+    forceReadSignalp = nullptr;
 
-    VerilatedVar var{namep,   datap,
-                     vltype,  static_cast<VerilatedVarFlags>(vlflags),
-                     isParam, std::move(ForceableInfop)};
+    VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
+                     isParam, std::move(ForceableInfop));
+    ForceableInfop = nullptr;
+
+    va_list ap;
+    va_start(ap, pdims);
+    for (int i = 0; i < udims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        var.m_unpacked[i].m_left = msb;
+        var.m_unpacked[i].m_right = lsb;
+    }
+    for (int i = 0; i < pdims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        var.m_packed[i].m_left = msb;
+        var.m_packed[i].m_right = lsb;
+    }
+    va_end(ap);
 
     m_varsp->emplace(namep, std::move(var));
     return &(m_varsp->find(namep)->second);
