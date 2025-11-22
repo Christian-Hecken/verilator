@@ -259,15 +259,16 @@ class ForceableInfo final {
 
 public:
     ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
-                  std::unique_ptr<VerilatedVar> forceReadSignalp, const bool isContinuously)
-        : m_forceControlSignals(forceControlSignals)
-        , m_forceReadSignalp(std::move(forceReadSignalp))
-        , m_isContinuously(isContinuously) {}
-    const VerilatedVar* forceReadSignal() const { return m_forceReadSignalp.get(); }
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const {
+                  std::unique_ptr<VerilatedVar> forceReadSignalp,
+                  const bool isContinuously) VL_MT_UNSAFE
+        : m_forceControlSignals{forceControlSignals},
+          m_forceReadSignalp{std::move(forceReadSignalp)},
+          m_isContinuously{isContinuously} {}
+    const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return m_forceReadSignalp.get(); }
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
         return m_forceControlSignals;
     }
-    bool isContinuously() const { return m_isContinuously; }
+    bool isContinuously() const VL_MT_UNSAFE { return m_isContinuously; }
 };
 
 //===========================================================================
