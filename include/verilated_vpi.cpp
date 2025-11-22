@@ -2713,9 +2713,9 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         }
     } else if (valuep->format == vpiIntVal) {
         if (VL_UNLIKELY(vop->varp()->isForceable())) {
-            std::weak_ptr<VerilatedVar> forceReadSignalp = vop->varp()->forceReadSignal();
+            const VerilatedVar* forceReadSignalp = vop->varp()->forceableInfo()->forceReadSignal();
             VerilatedVpioVarBase forceReadSignalVpioVar{
-                forceReadSignalp.lock().get(), vop->scopep()};  // Same scope as base signal
+                forceReadSignalp, vop->scopep()};  // Same scope as base signal
             valuep->value.integer = vl_vpi_get_word(&forceReadSignalVpioVar, 32, 0);
         } else {
             valuep->value.integer = vl_vpi_get_word(vop, 32, 0);
@@ -2927,7 +2927,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             return object;
         } else if (valuep->format == vpiIntVal) {
             if (forceFlag == vpiForceFlag) {
-                const auto forceControlSignals = vop->varp()->forceControlSignals();
+                const auto forceControlSignals
+                    = vop->varp()->forceableInfo()->forceControlSignals();
                 const VerilatedVar* const forceEnableSignalp = forceControlSignals.first;
                 const VerilatedVar* const forceValueSignalp = forceControlSignals.second;
                 const VerilatedVpioVar forceEnableSignalVpioVar{
@@ -2938,7 +2939,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 vl_vpi_put_word(&forceValueSignalVpioVar, valuep->value.integer, 64,
                                 0);  // Set __VforceVal to forced value
             } else if (forceFlag == vpiReleaseFlag) {
-                const auto forceControlSignals = vop->varp()->forceControlSignals();
+                const auto forceControlSignals
+                    = vop->varp()->forceableInfo()->forceControlSignals();
                 const VerilatedVar* const forceEnableSignalp = forceControlSignals.first;
                 const VerilatedVar* const forceValueSignalp = forceControlSignals.second;
                 const VerilatedVpioVar forceEnableSignalVpioVar{
@@ -2951,7 +2953,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 // Step 2: Set valuep
                 // If assigned continuously, signal will be reset to its base signal's value,
                 // otherwise it will stay at the force value until an event triggers an update
-                valuep->value.integer = vop->varp()->isContinuously()
+                valuep->value.integer = vop->varp()->forceableInfo()->isContinuously()
                                             ? *(vop->varCDatap())
                                             : *(forceValueSignalVpioVar.varCDatap());
 

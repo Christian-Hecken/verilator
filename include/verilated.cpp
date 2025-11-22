@@ -46,6 +46,8 @@
 //=========================================================================
 
 #include "verilated.h"
+
+#include "verilated_sym_props.h"
 #define VERILATOR_VERILATED_CPP_
 
 #include "verilated_config.h"
@@ -3562,17 +3564,12 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
     // signal. Instead, V3EmitCSyms should be adapted to find the __VforceRd
     // signal and give its vltype and vlflags to this function as arguments.
 
-    // std::unique_ptr<ForceableInfo> ForceableInfop = std::make_unique<ForceableInfo>(
-    //     forceControlSignals, std::move(forceReadSignalp), isContinuously);
+    std::unique_ptr<ForceableInfo> ForceableInfop = std::make_unique<ForceableInfo>(
+        forceControlSignals, std::move(forceReadSignalp), isContinuously);
 
-    VerilatedVar var{namep,
-                     datap,
-                     vltype,
-                     static_cast<VerilatedVarFlags>(vlflags),
-                     isParam,
-                     isContinuously,
-                     std::move(forceReadSignalp),
-                     forceControlSignals};
+    VerilatedVar var{namep,   datap,
+                     vltype,  static_cast<VerilatedVarFlags>(vlflags),
+                     isParam, std::move(ForceableInfop)};
 
     m_varsp->emplace(namep, std::move(var));
     return &(m_varsp->find(namep)->second);

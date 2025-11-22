@@ -101,8 +101,6 @@ class VerilatedVarProps VL_NOT_FINAL {
             m_packedDpi = VerilatedRange{packedSize - 1, 0};
         }
     }
-    const std::shared_ptr<VerilatedVar> m_forceReadSignalp{nullptr};
-    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{nullptr, nullptr};
     // CONSTRUCTORS
 protected:
     friend class VerilatedScope;
@@ -114,14 +112,6 @@ protected:
         initUnpacked(udims, nullptr);
         initPacked(pdims, nullptr);
     }
-    VerilatedVarProps(VerilatedVarType vltype, int vlflags,
-                      std::unique_ptr<VerilatedVar> forceReadSignalp,
-                      std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals)
-        : m_magic{MAGIC}
-        , m_vltype{vltype}
-        , m_vlflags(VerilatedVarFlags(vlflags))
-        , m_forceReadSignalp(std::move(forceReadSignalp))
-        , m_forceControlSignals(forceControlSignals) {}
 
 public:
     class Unpacked {};
@@ -174,10 +164,6 @@ public:
     int udims() const VL_MT_SAFE { return m_unpacked.size(); }
     int pdims() const VL_MT_SAFE { return m_packed.size(); }
     int dims() const VL_MT_SAFE { return pdims() + udims(); }
-    std::weak_ptr<VerilatedVar> forceReadSignal() const { return m_forceReadSignalp; }
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const {
-        return m_forceControlSignals;
-    }
     const std::vector<VerilatedRange>& packedRanges() const VL_MT_SAFE { return m_packed; }
     const std::vector<VerilatedRange>& unpackedRanges() const VL_MT_SAFE { return m_unpacked; }
     const VerilatedRange* range(int dim) const VL_MT_SAFE {
@@ -268,7 +254,7 @@ public:
 class VerilatedVar;
 class ForceableInfo final {
     const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{nullptr, nullptr};
-    const std::shared_ptr<VerilatedVar> m_forceReadSignalp{nullptr};
+    const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};
     const bool m_isContinuously;
 
 public:
@@ -277,7 +263,7 @@ public:
         : m_forceControlSignals(forceControlSignals)
         , m_forceReadSignalp(std::move(forceReadSignalp))
         , m_isContinuously(isContinuously) {}
-    std::weak_ptr<VerilatedVar> forceReadSignal() const { return m_forceReadSignalp; }
+    const VerilatedVar* forceReadSignal() const { return m_forceReadSignalp.get(); }
     std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const {
         return m_forceControlSignals;
     }
@@ -296,7 +282,6 @@ class VerilatedVar final : public VerilatedVarProps {
 
 protected:
     const bool m_isParam;
-    const bool m_isContinuously;
     friend class VerilatedScope;
     // CONSTRUCTORS
     VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
@@ -304,17 +289,15 @@ protected:
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
         , m_namep{namep}
-        , m_isParam{isParam}
-        , m_isContinuously{false} {}
+        , m_isParam{isParam} {}
     VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
-                 VerilatedVarFlags vlflags, bool isParam, bool isContinuously,
-                 std::unique_ptr<VerilatedVar> forceReadSignal,
-                 std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals)
-        : VerilatedVarProps{vltype, vlflags, std::move(forceReadSignal), forceControlSignals}
+                 VerilatedVarFlags vlflags, bool isParam,
+                 std::unique_ptr<const ForceableInfo> forceableInfo)
+        : VerilatedVarProps{vltype, vlflags}
         , m_datap{datap}
         , m_namep{namep}
-        , m_isParam{isParam}
-        , m_isContinuously{isContinuously} {}
+        , m_forceableInfo{std::move(forceableInfo)}
+        , m_isParam{isParam} {}
 
 public:
     ~VerilatedVar() = default;
@@ -323,7 +306,7 @@ public:
     void* datap() const { return m_datap; }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
-    bool isContinuously() const { return m_isContinuously; }
+    const ForceableInfo* forceableInfo() const { return m_forceableInfo.get(); }
 };
 
 #endif  // Guard
