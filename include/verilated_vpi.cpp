@@ -2630,7 +2630,9 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value val
         = baseSignalVop->varp()->isForceable() ? std::make_unique<const VerilatedVpioVarBase>(
                                                      forceReadSignalp, baseSignalVop->scopep())
                                                : nullptr;
-    if (baseSignalVop->varp()->isForceable() && (!forceReadSignalp || !forceReadSignalVpioVarp)) {
+    // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+    if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
+                    && (!forceReadSignalp || !forceReadSignalVpioVarp))) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
                       "%s: Signal '%s' is marked forceable, but force "
                       "read signal could not be retrieved.",
@@ -2848,9 +2850,11 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                   ? std::make_unique<const VerilatedVpioVar>(forceValueSignalp,
                                                              baseSignalVop->scopep())
                   : nullptr;
-        if (baseSignalVop->varp()->isForceable()
-            && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
-                || !forceValueSignalVop)) {
+
+        // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+        if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
+                        && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
+                            || !forceValueSignalVop))) {
             VL_VPI_ERROR_(__FILE__, __LINE__,
                           "%s: Signal '%s' with vpiHandle '%p' is marked forceable, but force "
                           "control signals could not be retrieved.",
