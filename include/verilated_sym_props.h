@@ -252,6 +252,8 @@ class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
+    const int* m_otherp;
+
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
@@ -261,6 +263,14 @@ protected:
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
         , m_namep{namep}
+        , m_otherp{nullptr}
+        , m_isParam{isParam} {}
+    VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam, int* otherp)
+        : VerilatedVarProps{vltype, vlflags, udims, pdims}
+        , m_datap{datap}
+        , m_namep{namep}
+        , m_otherp{otherp}
         , m_isParam{isParam} {}
 
 public:
