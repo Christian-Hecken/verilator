@@ -79,9 +79,9 @@ jobs:
       - name: Install test dependencies
         run: ./ci/ci-install.bash
 
-      # - uses: actions/checkout@v4
-      # - name: Setup tmate session
-      #   uses: mxschmitt/action-tmate@v3
+      - uses: actions/checkout@v4
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
 
       - name: Test
         id: run-test
