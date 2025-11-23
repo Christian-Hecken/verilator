@@ -79,6 +79,10 @@ jobs:
       - name: Install test dependencies
         run: ./ci/ci-install.bash
 
+      # - uses: actions/checkout@v4
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+
       - name: Test
         id: run-test
         continue-on-error: true
@@ -99,6 +103,12 @@ jobs:
         with:
           path: ${{ github.workspace }}/repo/obj_coverage/verilator-${{ inputs.suite }}.info
           name: code-coverage-${{ inputs.suite }}
+
+      # - name: Upload Verilated Code
+      #   uses: actions/upload-artifact@v5
+      #   with:
+      #     path: ${{ github.workspace }}/repo/test_regress/obj_vlt
+      #     name: verilated-code-${{ inputs.suite }}
 
       - name: Fail job if a test failed
         if: ${{ steps.run-test.outcome == 'failure' && !cancelled() }}

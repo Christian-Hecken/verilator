@@ -1,7 +1,0 @@
-  scopesDump:
-    SCOPE 0x#: top.TOP
-       VAR 0x#: clk
-    SCOPE 0x#: top.t
-       VAR 0x#: clk
-
-*-* All Finished *-*
