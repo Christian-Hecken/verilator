@@ -1077,9 +1077,9 @@ public:
         s().m_inertialPuts.clear();
     }
     static std::pair<vpiHandle, vpiHandle> getForceControlSignals(const VerilatedVpioVarBase* vop);
-    static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bit_value) {
-        assert(bit_value == 0 || bit_value == 1);
-        const uint64_t word = (bit_value == 1) ? -1ULL : 0ULL;
+    static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
+        assert(bitValue == 0 || bitValue == 1);
+        const uint64_t word = (bitValue == 1) ? -1ULL : 0ULL;
         constexpr int wordSize = 64;
         const uint32_t varBits = vop->bitSize();
         const std::size_t numChunks = (varBits / wordSize);
