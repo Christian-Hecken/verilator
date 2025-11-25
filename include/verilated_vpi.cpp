@@ -1251,9 +1251,9 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
     const std::string forceEnableSignalName = signalName + "__VforceEn";
     const std::string forceValueSignalName = signalName + "__VforceVal";
 
-    vpiHandle forceEnableSignalp
+    vpiHandle const forceEnableSignalp  // NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceEnableSignalName.c_str()), nullptr);
-    vpiHandle forceValueSignalp
+    vpiHandle const forceValueSignalp  // NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceValueSignalName.c_str()), nullptr);
     if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceEnableSignalp))) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
