@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-# DESCRIPTION: Test failure of trying to force a non-forceable signal
-# This test checks that attempting to force a signal that is not marked as
-# forceable causes an error under Verilator, and does not cause an error in
-# other simulators that do not need this metacomment to be able to force
-# signals.
+# DESCRIPTION: Verilator: Verilog Test driver/expect definition
 #
 # Copyright 2025 by Wilson Snyder. This program is free software; you
 # can redistribute it and/or modify it under the terms of either the GNU

@@ -3,6 +3,14 @@
 // any use, without warranty.
 // SPDX-License-Identifier: CC0-1.0
 // ======================================================================
+
+// DESCRIPTION: vpi force and release test
+//
+// This test checks that forcing a signal using vpi_put_value with vpiForceFlag
+// sets it to the correct value, and then releasing it with vpiReleaseFlag
+// returns it to the initial state. This is a basic test that just checks the
+// correct behavior for a clocked register being forced with a VpiIntVal.
+
 #include "verilated.h"  // For VL_PRINTF
 
 #include "TestSimulator.h"  // For is_verilator()

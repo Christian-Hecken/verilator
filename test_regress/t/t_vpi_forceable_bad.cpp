@@ -3,6 +3,14 @@
 // any use, without warranty.
 // SPDX-License-Identifier: CC0-1.0
 // ======================================================================
+
+// DESCRIPTION: Test failure of trying to force a non-forceable signal
+//
+// This test checks that attempting to force a signal that is not marked as
+// forceable causes an error under Verilator, and does not cause an error in
+// other simulators that do not need this metacomment to be able to force
+// signals.
+
 #include "verilated.h"
 
 #include "TestSimulator.h"  // For is_verilator()
