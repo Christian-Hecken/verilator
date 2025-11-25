@@ -3,6 +3,7 @@
 // any use, without warranty.
 // SPDX-License-Identifier: CC0-1.0
 // ======================================================================
+
 `define STRINGIFY(x) `"x`"
 
 module t ();
