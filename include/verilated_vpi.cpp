@@ -2648,9 +2648,10 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
 
     const int varBits = vop->bitSize();
 
-    // TODO: __VforceRd already has the correct value, but that signal is not public and thus not
+    // __VforceRd already has the correct value, but that signal is not public and thus not
     // present in the scope's m_varsp map, so its value has to be recreated using the __VforceEn
     // and __VforceVal signals.
+    // TODO: Implement a way to retrieve __VforceRd, rather than needing to recreate it.
     const auto forceControlSignals = vop->varp()->isForceable()
                                          ? VerilatedVpiImp::getForceControlSignals(vop)
                                          : std::pair<vpiHandle, vpiHandle>{nullptr, nullptr};
