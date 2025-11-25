@@ -12,7 +12,6 @@ module t;
 `elsif USE_VPI_NOT_DPI
 `ifdef VERILATOR
 `systemc_header
-  extern "C" int baselineValue();
   extern "C" int forceValues();
   extern "C" int releaseValues();
   extern "C" int checkValuesForced();
@@ -20,7 +19,6 @@ module t;
 `verilog
 `endif
 `else
-  import "DPI-C" context function int baselineValue();
   import "DPI-C" context function int forceValues();
   import "DPI-C" context function int releaseValues();
   import "DPI-C" context function int checkValuesForced();
@@ -149,22 +147,44 @@ module Test (
     input clk
 );
 
-  logic clockedReg  /*verilator public_flat_rw*/  /*verilator forceable*/, assignedWire;
+`ifdef IVERILOG
+`elsif USE_VPI_NOT_DPI
 `ifdef VERILATOR
-  assign assignedWire = $c32("baselineValue()");
-`else
-  initial begin
-    assignedWire = $baselineValue;
-  end
+`systemc_header
+  extern "C" int baselineValue();
+`verilog
 `endif
+`else
+  import "DPI-C" context function int baselineValue();
+`endif
+
+  logic clockedReg  /*verilator public_flat_rw*/  /*verilator forceable*/;
+  integer clockedRegInput;
+
+  initial begin
+`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
+    clockedRegInput = $c32("baselineValue()");
+`else
+    clockedRegInput = baselineValue();
+`endif
+`elsif IVERILOG
+    clockedRegInput = $baselineValue;
+`elsif USE_VPI_NOT_DPI
+    clockedRegInput = $baselineValue;
+`else
+    clockedRegInput = baselineValue();
+`endif
+  end
+
   always @(posedge clk) begin
-    clockedReg <= assignedWire;
+    clockedReg <= clockedRegInput[0];
   end
 
 `ifdef TEST_VERBOSE
   initial begin
-    $display("[time]\t\tclk\t\tassignedWire\tclockedReg");
-    forever #1 $display("[%0t]\t\t%b\t\t%b\t\t%b", $time, clk, assignedWire, clockedReg);
+    $display("[time]\t\tclk\t\tclockedRegInput\tclockedReg");
+    forever #1 $display("[%0t]\t\t%b\t\t%b\t\t%b", $time, clk, clockedRegInput[0], clockedReg);
   end
 `endif
 
