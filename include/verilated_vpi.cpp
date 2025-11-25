@@ -1262,7 +1262,6 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
                       "marked as forceable",
                       __func__, signalName.c_str(), forceEnableSignalp,
                       forceEnableSignalName.c_str());
-        forceEnableSignalp = nullptr;
     }
     if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceValueSignalp))) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
@@ -1271,7 +1270,6 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
                       "marked as forceable",
                       __func__, signalName.c_str(), forceValueSignalp,
                       forceValueSignalName.c_str());
-        forceValueSignalp = nullptr;
     }
     return {forceEnableSignalp, forceValueSignalp};
 };
