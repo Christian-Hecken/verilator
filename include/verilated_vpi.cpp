@@ -1091,8 +1091,6 @@ public:
         if (varBits % wordSize != 0)
             vl_vpi_put_word(vop, word, varBits % wordSize, numChunks * wordSize);
     }
-    static void setAllBits(const VerilatedVpioVar* vop) { setAllBitsToValue(vop, 1); }
-    static void clearAllBits(const VerilatedVpioVar* vop) { setAllBitsToValue(vop, 0); }
 };
 
 //======================================================================
@@ -2902,11 +2900,11 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
         if (forceFlag == vpiForceFlag) {
             // Enable __VforceEn
-            VerilatedVpiImp::setAllBits(forceEnableSignalVop);
+            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 1);
         }
         if (forceFlag == vpiReleaseFlag) {
             // Step 1: Deactivate __VforceEn
-            VerilatedVpiImp::clearAllBits(forceEnableSignalVop);
+            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
             // Step 2: Set valuep
             const bool isContinuously = false;
