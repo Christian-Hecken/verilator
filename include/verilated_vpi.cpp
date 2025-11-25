@@ -2956,10 +2956,10 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 }
             }
 
-            return object;  // TODO: According to the SystemVerilog specification,
-                            // vpi_put_value should return a handle to the scheduled event
-                            // if the vpiReturnEvent flag is selected, NULL otherwise. Is
-                            // this even possible with Verilator?
+            // TODO: According to the SystemVerilog specification,
+            // vpi_put_value should return a handle to the scheduled event
+            // if the vpiReturnEvent flag is selected, NULL otherwise.
+            return object;
         }
 
         if (valuep->format == vpiVectorVal) {
