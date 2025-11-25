@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: CC0-1.0
 // ======================================================================
 
-module t ();
+module t;
 
 `ifdef IVERILOG
 `elsif USE_VPI_NOT_DPI

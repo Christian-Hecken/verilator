@@ -6,7 +6,7 @@
 
 `define STRINGIFY(x) `"x`"
 
-module t ();
+module t;
 
 `ifdef IVERILOG
 `elsif USE_VPI_NOT_DPI
