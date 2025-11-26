@@ -2665,7 +2665,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     t_vpi_error_info getForceControlSignalsError{};
     const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
     // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-    if (VL_UNLIKELY(errorOccurred && getForceControlSignalsError.level < vpiError)) {
+    if (VL_UNCOVERABLE(errorOccurred && getForceControlSignalsError.level < vpiError)) {
         vpi_printf(getForceControlSignalsError.message);
         VL_VPI_ERROR_RESET_();
     }
@@ -2904,7 +2904,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         t_vpi_error_info getForceControlSignalsError{};
         const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-        if (VL_UNLIKELY(errorOccurred && getForceControlSignalsError.level < vpiError)) {
+        if (VL_UNCOVERABLE(errorOccurred && getForceControlSignalsError.level < vpiError)) {
             vpi_printf(getForceControlSignalsError.message);
             VL_VPI_ERROR_RESET_();
         }
@@ -2965,7 +2965,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                     return nullptr;
                 }
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && baseValueGetError.level < vpiError)) {
+                if (VL_UNCOVERABLE(errorOccurred && baseValueGetError.level < vpiError)) {
                     vpi_printf(baseValueGetError.message);
                     VL_VPI_ERROR_RESET_();
                 }
@@ -2986,7 +2986,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                     return nullptr;
                 }
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level < vpiError)) {
+                if (VL_UNCOVERABLE(errorOccurred && forceValueGetError.level < vpiError)) {
                     vpi_printf(forceValueGetError.message);
                     VL_VPI_ERROR_RESET_();
                 }
