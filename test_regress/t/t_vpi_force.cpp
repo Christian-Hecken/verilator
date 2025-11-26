@@ -25,7 +25,6 @@ const std::string testSignalName = "t.test.clockedReg";
 namespace {
 
 bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
-
     t_vpi_error_info errorInfo{};
     const bool errorOccured = vpi_chk_error(&errorInfo);
     if (VL_UNLIKELY(errorOccured)) {
@@ -35,16 +34,9 @@ bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
     return false;
 }
 
-// vpi_handle_by_name expects a non-const PLI_BYTE8* array, so this function creates a copy of the
-// const string name.
-vpiHandle vpiHandleFromString(const std::string& name) {
-    std::vector<char> nameCopy(name.begin(), name.end());
-    nameCopy.push_back('\0');
-    return vpi_handle_by_name(reinterpret_cast<PLI_BYTE8*>(nameCopy.data()), nullptr);
-}
-
 int checkValues(int expectedValue) {
-    vpiHandle signalp = vpiHandleFromString(testSignalName);
+    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
     s_vpi_value value_s;
     value_s.format = vpiIntVal;
@@ -78,7 +70,8 @@ extern "C" int forceValues(void) {
 #endif
     }
 
-    vpiHandle signalp = vpiHandleFromString(testSignalName);
+    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
 
     s_vpi_value value_s;
@@ -92,7 +85,8 @@ extern "C" int forceValues(void) {
 }
 
 extern "C" int releaseValues(void) {
-    vpiHandle signalp = vpiHandleFromString(testSignalName);
+    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
 
     s_vpi_value value_s;
