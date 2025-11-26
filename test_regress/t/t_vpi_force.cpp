@@ -68,7 +68,7 @@ bool insertSignalIntoScope(const std::string& scopeName, const char* signalName,
     return true;
 }
 
-int tryVpiGetWithMissingSignal(vpiHandle const signalToGet,  // NOLINT(misc-misplaced-const)
+int tryVpiGetWithMissingSignal(const TestVpiHandle& signalToGet,  // NOLINT(misc-misplaced-const)
                                const char* const scopeName, const char* const signalNameToRemove,
                                const std::string& expectedErrorMessage) {
     std::unique_ptr<const VerilatedVar> removedSignal
@@ -97,7 +97,7 @@ int tryVpiGetWithMissingSignal(vpiHandle const signalToGet,  // NOLINT(misc-misp
 }
 
 int tryVpiPutWithMissingSignal(const int valueToPut,
-                               vpiHandle const signalToPut,  // NOLINT(misc-misplaced-const)
+                               const TestVpiHandle& signalToPut,  // NOLINT(misc-misplaced-const)
                                const int flag, const char* const scopeName,
                                const char* const signalNameToRemove,
                                const std::vector<std::string>& expectedErrorMessageSubstrings) {
@@ -131,13 +131,13 @@ int tryVpiPutWithMissingSignal(const int valueToPut,
 }
 
 int checkValues(int expectedValue) {
-    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
-    CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
-        signalp, "t.test", "clockedReg__VforceEn",
+        signalHandle, "t.test", "clockedReg__VforceEn",
         "vl_vpi_get_value: Signal 't.test.clockedReg' is marked forceable, but force control "
         "signals could not be retrieved. Error message: getForceControlSignals: vpi force or "
         "release requested for 't.test.clockedReg', but vpiHandle '(nil)' of enable signal "
@@ -147,7 +147,7 @@ int checkValues(int expectedValue) {
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
-        signalp, "t.test", "clockedReg__VforceVal",
+        signalHandle, "t.test", "clockedReg__VforceVal",
         "vl_vpi_get_value: Signal 't.test.clockedReg' is marked forceable, but force control "
         "signals could not be retrieved. Error message: getForceControlSignals: vpi force or "
         "release requested for 't.test.clockedReg', but vpiHandle '(nil)' of value signal "
@@ -156,7 +156,7 @@ int checkValues(int expectedValue) {
         "marked as forceable"));
 
     s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = 0}};
-    vpi_get_value(signalp, &value_s);
+    vpi_get_value(signalHandle, &value_s);
     const int signalValue = value_s.value.integer;
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
@@ -183,13 +183,13 @@ extern "C" int forceValues(void) {
 #endif
     }
 
-    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
-    CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
-        forceValue, signalp, vpiForceFlag, "t.test", "clockedReg__VforceEn",
+        forceValue, signalHandle, vpiForceFlag, "t.test", "clockedReg__VforceEn",
         {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
          // Exact handle address does not matter
          " is marked forceable, but force control signals could not be retrieved. Error "
@@ -200,7 +200,7 @@ extern "C" int forceValues(void) {
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
-        forceValue, signalp, vpiForceFlag, "t.test", "clockedReg__VforceVal",
+        forceValue, signalHandle, vpiForceFlag, "t.test", "clockedReg__VforceVal",
         {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
          // Exact handle address does not matter
          " is marked forceable, but force control signals could not be retrieved. Error "
@@ -210,7 +210,7 @@ extern "C" int forceValues(void) {
          "signal is marked as forceable"}));
 
     s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = forceValue}};
-    vpi_put_value(signalp, &value_s, nullptr, vpiForceFlag);
+    vpi_put_value(signalHandle, &value_s, nullptr, vpiForceFlag);
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
@@ -219,13 +219,13 @@ extern "C" int forceValues(void) {
 }
 
 extern "C" int releaseValues(void) {
-    vpiHandle const signalp  //NOLINT(misc-misplaced-const)
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
-    CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
-        releaseValue, signalp, vpiReleaseFlag, "t.test", "clockedReg__VforceEn",
+        releaseValue, signalHandle, vpiReleaseFlag, "t.test", "clockedReg__VforceEn",
         {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
          // Exact handle address does not matter
          " is marked forceable, but force control signals could not be retrieved. Error "
@@ -236,7 +236,7 @@ extern "C" int releaseValues(void) {
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
-        releaseValue, signalp, vpiReleaseFlag, "t.test", "clockedReg__VforceVal",
+        releaseValue, signalHandle, vpiReleaseFlag, "t.test", "clockedReg__VforceVal",
         {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
          // Exact handle address does not matter
          " is marked forceable, but force control signals could not be retrieved. Error "
@@ -246,7 +246,7 @@ extern "C" int releaseValues(void) {
          "signal is marked as forceable"}));
 
     s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = releaseValue}};
-    vpi_put_value(signalp, &value_s, nullptr, vpiReleaseFlag);
+    vpi_put_value(signalHandle, &value_s, nullptr, vpiReleaseFlag);
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
