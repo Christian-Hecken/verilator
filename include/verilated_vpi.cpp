@@ -1257,7 +1257,7 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceValueSignalName.c_str()), nullptr);
     if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceEnableSignalp))) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
-                      "%s: vpi force or release requested for '%s', but vpiHandle '%p' of control "
+                      "%s: vpi force or release requested for '%s', but vpiHandle '%p' of enable "
                       "signal '%s' could not be cast to VerilatedVpioVar*. Ensure signal is "
                       "marked as forceable",
                       __func__, signalName.c_str(), forceEnableSignalp,
@@ -2657,26 +2657,47 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
                                          : std::pair<vpiHandle, vpiHandle>{nullptr, nullptr};
     const vpiHandle& forceEnableSignalp = forceControlSignals.first;
     const vpiHandle& forceValueSignalp = forceControlSignals.second;
+    const VerilatedVpioVarBase* const forceEnableSignalVop
+        = vop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp) : nullptr;
+    const VerilatedVpioVarBase* const forceValueSignalVop
+        = vop->varp()->isForceable() ? VerilatedVpioVar::castp(forceValueSignalp) : nullptr;
+
+    t_vpi_error_info getForceControlSignalsError{};
+    const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
     // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-    if (VL_UNLIKELY(vop->varp()->isForceable() && (!forceEnableSignalp || !forceValueSignalp))) {
+    if (VL_UNLIKELY(errorOccurred && getForceControlSignalsError.level < vpiError)) {
+        vpi_printf(getForceControlSignalsError.message);
+        VL_VPI_ERROR_RESET_();
+    }
+    // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+    if (VL_UNLIKELY((errorOccurred && getForceControlSignalsError.level >= vpiError)
+                    || (vop->varp()->isForceable()
+                        && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
+                            || !forceValueSignalVop)))) {
+
+        // Check if getForceControlSignals provided any additional error info
+        t_vpi_error_info getForceControlSignalsError{};
+        const bool gotErrorMessage = vpi_chk_error(&getForceControlSignalsError);
+        const std::string previousErrorMessage
+            = gotErrorMessage
+                  ? std::string{" Error message: "} + getForceControlSignalsError.message
+                  : "";
+
         VL_VPI_ERROR_(__FILE__, __LINE__,
                       "%s: Signal '%s' is marked forceable, but force "
-                      "control signals could not be retrieved.",
-                      __func__, vop->fullname());
+                      "control signals could not be retrieved.%s",
+                      __func__, vop->fullname(),
+                      gotErrorMessage ? previousErrorMessage.c_str() : "");
         return;
     }
-    const VerilatedVpioVarBase* const forceEnableVop
-        = VerilatedVpioVarBase::castp(forceEnableSignalp);
-    const VerilatedVpioVarBase* const forceValueVop
-        = VerilatedVpioVarBase::castp(forceValueSignalp);
 
     const std::function<QData(const VerilatedVpioVarBase*, size_t, size_t)>
         get_forceable_signal_word
-        = [forceEnableVop, forceValueVop](const VerilatedVpioVarBase* baseSignalVop,
-                                          size_t bitCount, size_t addOffset) -> QData {
+        = [forceEnableSignalVop, forceValueSignalVop](const VerilatedVpioVarBase* baseSignalVop,
+                                                      size_t bitCount, size_t addOffset) -> QData {
         const QData baseSignalData = vl_vpi_get_word(baseSignalVop, bitCount, addOffset);
-        const QData forceEnableData = vl_vpi_get_word(forceEnableVop, bitCount, addOffset);
-        const QData forceValueData = vl_vpi_get_word(forceValueVop, bitCount, addOffset);
+        const QData forceEnableData = vl_vpi_get_word(forceEnableSignalVop, bitCount, addOffset);
+        const QData forceValueData = vl_vpi_get_word(forceValueSignalVop, bitCount, addOffset);
         const QData readData
             = (forceEnableData & forceValueData) | (~forceEnableData & baseSignalData);
         return readData;
@@ -2877,19 +2898,34 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         const VerilatedVpioVar* const forceEnableSignalVop
             = baseSignalVop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp)
                                                    : nullptr;
-        ;
         const VerilatedVpioVar* const forceValueSignalVop
             = baseSignalVop->varp()->isForceable() ? VerilatedVpioVar::castp(forceValueSignalp)
                                                    : nullptr;
-        ;
+        t_vpi_error_info getForceControlSignalsError{};
+        const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
+        // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+        if (VL_UNLIKELY(errorOccurred && getForceControlSignalsError.level < vpiError)) {
+            vpi_printf(getForceControlSignalsError.message);
+            VL_VPI_ERROR_RESET_();
+        }
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                         && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
                             || !forceValueSignalVop))) {
+
+            // Check if getForceControlSignals provided any additional error info
+            t_vpi_error_info getForceControlSignalsError{};
+            const bool gotErrorMessage = vpi_chk_error(&getForceControlSignalsError);
+            const std::string previousErrorMessage
+                = gotErrorMessage
+                      ? std::string{" Error message: "} + getForceControlSignalsError.message
+                      : "";
+
             VL_VPI_ERROR_(__FILE__, __LINE__,
                           "%s: Signal '%s' with vpiHandle '%p' is marked forceable, but force "
-                          "control signals could not be retrieved.",
-                          __func__, baseSignalVop->fullname(), object);
+                          "control signals could not be retrieved.%s",
+                          __func__, baseSignalVop->fullname(), object,
+                          gotErrorMessage ? previousErrorMessage.c_str() : "");
             return nullptr;
         }
 

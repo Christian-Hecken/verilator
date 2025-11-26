@@ -12,10 +12,14 @@
 // correct behavior for a clocked register being forced with a VpiIntVal.
 
 #include "verilated.h"  // For VL_PRINTF
+#include "verilated_sym_props.h"  // For VerilatedVar
+#include "verilated_syms.h"  // For VerilatedVarNameMap
 
 #include "TestSimulator.h"  // For is_verilator()
 #include "TestVpi.h"  // For CHECK_RESULT_NZ
 #include "vpi_user.h"
+
+#include <memory>  // For std::unique_ptr
 
 constexpr PLI_INT32 forceValue = 0;
 constexpr PLI_INT32 releaseValue = 1;
@@ -34,17 +38,126 @@ bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
     return false;
 }
 
+std::pair<const std::string, const bool> vpiGetErrorMessage() {
+    t_vpi_error_info errorInfo{};
+    const bool errorOccured = vpi_chk_error(&errorInfo);
+    return {errorInfo.message, errorOccured};
+}
+
+std::unique_ptr<const VerilatedVar> removeSignalFromScope(const std::string& scopeName,
+                                                          const std::string& signalName) {
+    const VerilatedScope* const scopep = Verilated::threadContextp()->scopeFind(scopeName.c_str());
+    if (!scopep) return nullptr;
+    VerilatedVarNameMap* const varsp = scopep->varsp();
+    const VerilatedVarNameMap::const_iterator foundSignalIt = varsp->find(signalName.c_str());
+    if (foundSignalIt == varsp->end()) return nullptr;
+    VerilatedVar foundSignal = foundSignalIt->second;
+    varsp->erase(foundSignalIt);
+    return std::make_unique<const VerilatedVar>(foundSignal);
+}
+
+// WARNING: signalName's lifetime must be the same as the scopep, i.e. the same as the
+// threadContextp! Otherwise, the key in the m_varsp map will be a stale pointer!
+// => Only literals are used in this test
+bool insertSignalIntoScope(const std::string& scopeName, const char* signalName,
+                           std::unique_ptr<const VerilatedVar> signal) {
+    const VerilatedScope* const scopep = Verilated::threadContextp()->scopeFind(scopeName.c_str());
+    if (!scopep) return false;
+    VerilatedVarNameMap* const varsp = scopep->varsp();
+    varsp->insert(std::pair<const char*, VerilatedVar>{signalName, *signal});
+    return true;
+}
+
+int tryVpiGetWithMissingSignal(vpiHandle const signalToGet,  // NOLINT(misc-misplaced-const)
+                               const char* const scopeName, const char* const signalNameToRemove,
+                               const std::string& expectedErrorMessage) {
+    std::unique_ptr<const VerilatedVar> removedSignal
+        = removeSignalFromScope(scopeName, signalNameToRemove);
+    CHECK_RESULT_NZ(removedSignal);  // NOLINT(concurrency-mt-unsafe)
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = 0}};
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_get_value(signalToGet, &value_s);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
+    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
+    bool insertSuccess
+        = insertSignalIntoScope(scopeName, signalNameToRemove, std::move(removedSignal));
+    CHECK_RESULT_NZ(insertSuccess);  // NOLINT(concurrency-mt-unsafe)
+    return 0;
+}
+
+int tryVpiPutWithMissingSignal(const int valueToPut,
+                               vpiHandle const signalToPut,  // NOLINT(misc-misplaced-const)
+                               const int flag, const char* const scopeName,
+                               const char* const signalNameToRemove,
+                               const std::vector<std::string>& expectedErrorMessageSubstrings) {
+    std::unique_ptr<const VerilatedVar> removedSignal
+        = removeSignalFromScope(scopeName, signalNameToRemove);
+    CHECK_RESULT_NZ(removedSignal);  // NOLINT(concurrency-mt-unsafe)
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = valueToPut}};
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_put_value(signalToPut, &value_s, nullptr, flag);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    const bool allExpectedErrorSubstringsFound
+        = std::all_of(expectedErrorMessageSubstrings.begin(), expectedErrorMessageSubstrings.end(),
+                      [receivedErrorMessage](const std::string& expectedSubstring) {
+                          return receivedErrorMessage.find(expectedSubstring) != std::string::npos;
+                      });
+    CHECK_RESULT_NZ(allExpectedErrorSubstringsFound);  // NOLINT(concurrency-mt-unsafe)
+    bool insertSuccess
+        = insertSignalIntoScope(scopeName, signalNameToRemove, std::move(removedSignal));
+    CHECK_RESULT_NZ(insertSuccess);  // NOLINT(concurrency-mt-unsafe)
+    return 0;
+}
+
 int checkValues(int expectedValue) {
     vpiHandle const signalp  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
-    s_vpi_value value_s;
-    value_s.format = vpiIntVal;
-    value_s.value.integer = 0;
-    int signalValue = 0;
 
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
+        signalp, "t.test", "clockedReg__VforceEn",
+        "vl_vpi_get_value: Signal 't.test.clockedReg' is marked forceable, but force control "
+        "signals could not be retrieved. Error message: getForceControlSignals: vpi force or "
+        "release requested for 't.test.clockedReg', but vpiHandle '(nil)' of enable signal "
+        "'t.test.clockedReg__VforceEn' could not be cast to VerilatedVpioVar*. Ensure signal "
+        "is "
+        "marked as forceable"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
+        signalp, "t.test", "clockedReg__VforceVal",
+        "vl_vpi_get_value: Signal 't.test.clockedReg' is marked forceable, but force control "
+        "signals could not be retrieved. Error message: getForceControlSignals: vpi force or "
+        "release requested for 't.test.clockedReg', but vpiHandle '(nil)' of value signal "
+        "'t.test.clockedReg__VforceVal' could not be cast to VerilatedVpioVar*. Ensure signal "
+        "is "
+        "marked as forceable"));
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = 0}};
     vpi_get_value(signalp, &value_s);
-    signalValue = value_s.value.integer;
+    const int signalValue = value_s.value.integer;
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
@@ -74,10 +187,31 @@ extern "C" int forceValues(void) {
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
 
-    s_vpi_value value_s;
-    value_s.format = vpiIntVal;
-    value_s.value.integer = forceValue;
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
+        forceValue, signalp, vpiForceFlag, "t.test", "clockedReg__VforceEn",
+        {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
+         // Exact handle address does not matter
+         " is marked forceable, but force control signals could not be retrieved. Error "
+         "message: getForceControlSignals: vpi force or release requested for "
+         "'t.test.clockedReg', but vpiHandle '(nil)' of enable signal "
+         "'t.test.clockedReg__VforceEn' could not be cast to VerilatedVpioVar*. Ensure "
+         "signal is marked as forceable"}));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
+        forceValue, signalp, vpiForceFlag, "t.test", "clockedReg__VforceVal",
+        {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
+         // Exact handle address does not matter
+         " is marked forceable, but force control signals could not be retrieved. Error "
+         "message: getForceControlSignals: vpi force or release requested for "
+         "'t.test.clockedReg', but vpiHandle '(nil)' of value signal "
+         "'t.test.clockedReg__VforceVal' could not be cast to VerilatedVpioVar*. Ensure "
+         "signal is marked as forceable"}));
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = forceValue}};
     vpi_put_value(signalp, &value_s, nullptr, vpiForceFlag);
+
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
 
@@ -89,10 +223,31 @@ extern "C" int releaseValues(void) {
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalp);  // NOLINT(concurrency-mt-unsafe)
 
-    s_vpi_value value_s;
-    value_s.format = vpiIntVal;
-    value_s.value.integer = releaseValue;
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
+        releaseValue, signalp, vpiReleaseFlag, "t.test", "clockedReg__VforceEn",
+        {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
+         // Exact handle address does not matter
+         " is marked forceable, but force control signals could not be retrieved. Error "
+         "message: getForceControlSignals: vpi force or release requested for "
+         "'t.test.clockedReg', but vpiHandle '(nil)' of enable signal "
+         "'t.test.clockedReg__VforceEn' could not be cast to VerilatedVpioVar*. Ensure "
+         "signal is marked as forceable"}));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe);
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(
+        releaseValue, signalp, vpiReleaseFlag, "t.test", "clockedReg__VforceVal",
+        {"vpi_put_value: Signal 't.test.clockedReg' with vpiHandle ",
+         // Exact handle address does not matter
+         " is marked forceable, but force control signals could not be retrieved. Error "
+         "message: getForceControlSignals: vpi force or release requested for "
+         "'t.test.clockedReg', but vpiHandle '(nil)' of value signal "
+         "'t.test.clockedReg__VforceVal' could not be cast to VerilatedVpioVar*. Ensure "
+         "signal is marked as forceable"}));
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {.integer = releaseValue}};
     vpi_put_value(signalp, &value_s, nullptr, vpiReleaseFlag);
+
     // NOLINTNEXTLINE(concurrency-mt-unsafe);
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
     // TODO: Correct value for value_s is not implemented yet in vpi_put_value with vpiReleaseFlag,
