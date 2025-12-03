@@ -24,12 +24,12 @@
 ///
 //=========================================================================
 
+#include "verilatedos.h"
 #define VERILATOR_VERILATED_VPI_CPP_
-
-#include "verilated_vpi.h"
 
 #include "verilated.h"
 #include "verilated_imp.h"
+#include "verilated_vpi.h"
 
 #include "vltstd/vpi_user.h"
 
@@ -1077,10 +1077,12 @@ public:
         s().m_inertialPuts.clear();
     }
     static std::pair<vpiHandle, vpiHandle> getForceControlSignals(const VerilatedVpioVarBase* vop);
+
+    static std::size_t vlTypeSize(VerilatedVarType vltype);
     static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
         assert(bitValue == 0 || bitValue == 1);
         const uint64_t word = (bitValue == 1) ? -1ULL : 0ULL;
-        constexpr int wordSize = 64;
+        const std::size_t wordSize = vlTypeSize(vop->varp()->vltype());  // TODO: Check for failure
         const uint32_t varBits = vop->bitSize();
         const std::size_t numChunks = (varBits / wordSize);
         for (std::size_t i{0}; i < numChunks; ++i) {
@@ -1273,6 +1275,19 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
     }
     return {forceEnableSignalp, forceValueSignalp};
 };
+
+std::size_t VerilatedVpiImp::vlTypeSize(VerilatedVarType vltype) {
+    switch (vltype) {
+    case VLVT_UINT8: return sizeof(CData); break;
+    case VLVT_UINT16: return sizeof(SData); break;
+    case VLVT_UINT32: return sizeof(IData); break;
+    case VLVT_UINT64: return sizeof(QData); break;
+    case VLVT_WDATA: return sizeof(EData); break;
+    default:  // TODO: Uncov
+        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported vltype (%d)", __func__, vltype);
+        return 0;
+    }
+}
 //======================================================================
 // VerilatedVpiError Methods
 
@@ -2546,6 +2561,7 @@ VarAccessInfo<T> vl_vpi_var_access_info(const VerilatedVpioVarBase* vop, size_t 
     info.m_datap = reinterpret_cast<T*>(vop->varDatap());
     if (vop->varp()->vltype() == VLVT_WDATA) {
         assert(sizeof(T) == sizeof(EData));
+        bitCount = std::min(bitCount, wordBits);
         assert(bitCount <= wordBits);
         info.m_wordOffset = (vop->bitOffset() + addOffset) / wordBits;
         info.m_bitOffset = (vop->bitOffset() + addOffset) % wordBits;
@@ -2637,6 +2653,90 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
     }
 }
 
+template <typename T>
+std::vector<T> createReadDataVector(const void* const baseSignalDatap,
+                                    const std::pair<const void*, const void*> forceControlDatap,
+                                    const std::size_t bitCount) {
+    // TODO: Specialization for double -- see above:
+    // if (vop->varp()->vltype() == VLVT_REAL) varBits *= sizeof(double) * 8;
+    // TODO: How *does* a __VforceEn signal for Reals look like anyway? Can't mask it like
+    // individual bits, right?
+    // TODO: Turns out, __VforceEn and __VforceVal do *NOT* always have the same data type as
+    // assumed previously! -> For real, __VforceEn is CData! (1 CData per real, so can't force
+    // reals bit-wise)
+    // Would be nice to have `isRangedDType` in Verilated code
+    const void* const forceEnableDatap = forceControlDatap.first;
+    const void* const forceValueDatap = forceControlDatap.second;
+    assert(bitCount > 0);
+    const std::size_t numWords = (bitCount + (8 * sizeof(T)) - 1) / (8 * sizeof(T));  // Ceil
+    std::vector<T> readData(numWords);
+    for (std::size_t i{0}; i < numWords; ++i) {
+        const T forceEnableWord = reinterpret_cast<const T*>(forceEnableDatap)[i];
+        const T forceValueWord = reinterpret_cast<const T*>(forceValueDatap)[i];
+        const T baseSignalWord = reinterpret_cast<const T*>(baseSignalDatap)[i];
+        const T readDataWord
+            = (forceEnableWord & forceValueWord) | (~forceEnableWord & baseSignalWord);
+        readData[i] = readDataWord;
+    }
+    return readData;
+}
+
+template <>
+std::vector<double>
+createReadDataVector(const void* const baseSignalDatap,
+                     const std::pair<const void*, const void*> forceControlDatap,
+                     const std::size_t bitCount) {
+    // TODO: Maybe just replace bitCount with ElementCount? Because bitCount doesn't represent bits
+    // for reals, right?
+    // TODO: Generalize for all non-ranged data types (i.e. double, string, etc)
+    const void* const forceEnableDatap = forceControlDatap.first;
+    const void* const forceValueDatap = forceControlDatap.second;
+    assert(bitCount > 0);
+    const std::size_t numWords
+        = (bitCount + (8 * sizeof(double)) - 1) / (8 * sizeof(double));  // Ceil
+    std::vector<double> readData(numWords);
+    for (std::size_t i{0}; i < numWords; ++i) {
+        const uint8_t forceEnableWord
+            = reinterpret_cast<const uint8_t*>(forceEnableDatap)[i / sizeof(double)];
+        const uint8_t forceEnableBit
+            = (1 << i) & forceEnableWord;  // TODO: Won't work with WData -> Maybe just
+                                           // vl_vpi_get_value instead?
+        // TODO: Rename variables
+        const double forceValueWord = reinterpret_cast<const double*>(forceValueDatap)[i];
+        const double baseSignalWord = reinterpret_cast<const double*>(baseSignalDatap)[i];
+        const double readDataWord = forceEnableBit ? forceValueWord : baseSignalWord;
+        readData[i] = readDataWord;
+    }
+    return readData;
+}
+
+// template <>
+std::vector<std::string> createStringReadDataVector(
+    const void* const baseSignalDatap,
+    const std::pair<const VerilatedVpioVarBase*, const VerilatedVpioVarBase*> forceControlSignals,
+    const std::size_t elementCount) {
+    // TODO: Generalize for all non-ranged data types (i.e. double, string, etc)
+    const std::pair<const void*, const void*> forceControlDatap
+        = {forceControlSignals.first->varDatap(), forceControlSignals.second->varDatap()};
+    const VerilatedVpioVarBase* const forceEnableVop = forceControlSignals.first;
+
+    const void* const forceEnableDatap = forceControlDatap.first;
+    const void* const forceValueDatap = forceControlDatap.second;
+    assert(elementCount > 0);
+    std::vector<std::string> readData(elementCount);
+    for (std::size_t i{0}; i < elementCount; ++i) {
+        // const uint8_t elementForced = 0;  // TODO
+        const uint8_t elementForced = vl_vpi_get_word(forceEnableVop, 1, i);
+        const std::string forceValueElement
+            = reinterpret_cast<const std::string*>(forceValueDatap)[i];
+        const std::string baseSignalElement
+            = reinterpret_cast<const std::string*>(baseSignalDatap)[i];
+        const std::string readDataElement = elementForced ? forceValueElement : baseSignalElement;
+        readData[i] = readDataElement;
+    }
+    return readData;
+}
+
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
     void* const varDatap = vop->varDatap();
@@ -2647,6 +2747,8 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     static thread_local std::string t_outDynamicStr;
 
     const int varBits = vop->bitSize();
+
+    // TODO: Assert that udims == 0 if forceable
 
     // __VforceRd already has the correct value, but that signal is not public and thus not
     // present in the scope's m_varsp map, so its value has to be recreated using the __VforceEn
@@ -2700,9 +2802,56 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         const QData forceValueData = vl_vpi_get_word(forceValueSignalVop, bitCount, addOffset);
         const QData readData
             = (forceEnableData & forceValueData) | (~forceEnableData & baseSignalData);
+        // TODO: Can't be QData in all cases, need to decide on case by case basis
+        // TODO: Maybe create the readValue signal from scratch instead of returning just the data
+        // => Can point the vop to the right variable just like in vpi_put
+        // Actually *can* be QData, just has to be explicitly truncated in the end...
         return readData;
     };
 
+#if false
+    // TODO: Allocate correct number of words (QData, IData, CData,
+    // etc.) based on varp's vltype. But how can I know how many
+    // words to allocate? Maybe use vop->bitSize()?
+    std::unique_ptr<void[]> forceReadSignalDatap;
+    switch (vop->varp()->vltype()) {
+    case VLVT_UINT8: forceReadSignalDatap = createDatap<CData>(vop->bitSize());
+    case VLVT_UINT16: forceReadSignalDatap = createDatap<SData>(vop->bitSize());
+    case VLVT_UINT32: forceReadSignalDatap = createDatap<IData>(vop->bitSize());
+    case VLVT_UINT64: forceReadSignalDatap = createDatap<QData>(vop->bitSize());
+    case VLVT_WDATA: forceReadSignalDatap = createDatap<EData>(vop->bitSize());
+    default:
+        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported vltype (%d)", __func__,
+                      vop->varp()->vltype());
+        return;
+    }
+#endif
+
+#if false
+    VerilatedScope forceReadSignalScope{{}, {}, {}, {}, {}, {}};
+    const std::string forceReadSignalName = std::string{vop->name()} + "__VforceRd";
+    forceReadSignalScope.varInsert(
+        forceReadSignalName.c_str(), &forceReadSignalDatap, vop->varp()->isParam(),
+        vop->varp()->vltype(), {} /* flags are not important here */, vop->varp()->udims(),
+        vop->varp()->pdims());  // FIXME: This is not going to work, because `varInsert` needs the
+                                // specific dimension sizes as arguments, and the `...` ellipsis
+                                // cannot be constructed at runtime. Manually editing `m_unpacked`
+                                // after creation like in `varInsert` cannot work either because
+                                // that variable is private.
+
+    const VerilatedVarNameMap::const_iterator forceReadSignalIt
+        = forceReadSignalScope.varsp()->find(forceReadSignalName.c_str());
+    if (VL_UNCOVERABLE(forceReadSignalIt == forceReadSignalScope.varsp()->end()))  // TODO: Test
+    {
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "Creation of dummy VerilatedVarNameMap for force read signal ",
+                      forceReadSignalName.c_str(), " failed.");
+        return;
+    }
+    const VerilatedVar* forceReadSignalVarp = &(forceReadSignalIt->second);
+    VerilatedVpioVarBase forceReadSignalVop{forceReadSignalVarp, vop->scopep()};
+
+#endif
     const std::function<QData(const VerilatedVpioVarBase*, size_t, size_t)> get_word
         = vop->varp()->isForceable() ? get_forceable_signal_word : vl_vpi_get_word;
 
@@ -2741,7 +2890,19 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         }
     } else if (valuep->format == vpiBinStrVal) {
         t_outDynamicStr.resize(varBits);
-        const CData* datap = reinterpret_cast<CData*>(varDatap);
+
+        static thread_local std::vector<uint8_t> forceReadCData;
+        forceReadCData = vop->varp()->isForceable()
+                             ? createReadDataVector<uint8_t>(varDatap,
+                                                             {forceEnableSignalVop->varDatap(),
+                                                              forceValueSignalVop->varDatap()},
+                                                             vop->bitSize())
+                             : std::vector<uint8_t>{};
+        const uint8_t* const varCDatap = vop->varp()->isForceable()
+                                             ? forceReadCData.data()
+                                             : reinterpret_cast<CData*>(varDatap);
+
+        const CData* datap = varCDatap;
         for (size_t i = 0; i < varBits; ++i) {
             const size_t pos = i + vop->bitOffset();
             const char val = (datap[pos >> 3] >> (pos & 7)) & 1;
@@ -2784,10 +2945,36 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     } else if (valuep->format == vpiStringVal) {
         if (varp->vltype() == VLVT_STRING) {
             if (varp->isParam()) {
-                valuep->value.str = reinterpret_cast<char*>(varDatap);
+
+                // TODO: Replace with error, because strings are not forceable
+                static thread_local std::vector<uint8_t> forceReadCData;
+                forceReadCData
+                    = vop->varp()->isForceable()
+                          ? createReadDataVector<uint8_t>(varDatap,
+                                                          {forceEnableSignalVop->varDatap(),
+                                                           forceValueSignalVop->varDatap()},
+                                                          vop->bitSize())
+                          : std::vector<uint8_t>{};
+                const uint8_t* const varCDatap = vop->varp()->isForceable()
+                                                     ? forceReadCData.data()
+                                                     : reinterpret_cast<CData*>(varDatap);
+
+                valuep->value.str = reinterpret_cast<char*>(const_cast<uint8_t*>(varCDatap));
                 return;
             } else {
-                t_outDynamicStr = *(vop->varStringDatap());
+
+                static thread_local std::vector<std::string> forceReadStringData;
+                forceReadStringData
+                    = vop->varp()->isForceable()
+                          ? createStringReadDataVector(varDatap,
+                                                       {forceEnableSignalVop, forceValueSignalVop},
+                                                       vop->bitSize())
+                          : std::vector<std::string>{};
+                const std::string* const varStringDatap = vop->varp()->isForceable()
+                                                              ? forceReadStringData.data()
+                                                              : vop->varStringDatap();
+
+                t_outDynamicStr = *varStringDatap;
                 valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
                 return;
             }
@@ -2806,7 +2993,17 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         valuep->value.integer = get_word(vop, 32, 0);
         return;
     } else if (valuep->format == vpiRealVal) {
-        valuep->value.real = *(vop->varRealDatap());
+        static thread_local std::vector<double> forceReadRealData;
+        forceReadRealData = vop->varp()->isForceable()
+                                ? createReadDataVector<double>(varDatap,
+                                                               {forceEnableSignalVop->varDatap(),
+                                                                forceValueSignalVop->varDatap()},
+                                                               vop->bitSize())
+                                : std::vector<double>{};
+        const double* const varRealDatap
+            = vop->varp()->isForceable() ? forceReadRealData.data() : vop->varRealDatap();
+
+        valuep->value.real = *varRealDatap;
         return;
     } else if (valuep->format == vpiSuppressVal) {
         return;
