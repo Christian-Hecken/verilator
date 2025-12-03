@@ -2454,19 +2454,33 @@ static void vl_strprintf(std::string& buffer, char const* fmt, ...) {
     va_list args, args_copy;
     va_start(args, fmt);
     buffer.clear();
+    buffer.resize(buffer.capacity());
     // Make copy of args since we may need to call VL_VSNPRINTF more than once
     va_copy(args_copy, args);
     // Try VL_VSNPRINTF in existing buffer
     const int result
-        = VL_VSNPRINTF(const_cast<char*>(buffer.data()), buffer.capacity(), fmt, args_copy);
+        = VL_VSNPRINTF(const_cast<char*>(buffer.data()), buffer.size(), fmt, args_copy);
     va_end(args_copy);
+    if (result < 0) {
+        VL_VPI_ERROR_(__FILE__, __LINE__, "VL_VSNPRINTF failed.");
+        return;
+    }
     const int required = result + 1;  // Returned size doesn't include NUL terminator
     // If there wasn't enough space, reallocate and try again
     if (buffer.capacity() < required) {
-        buffer.reserve(required * 2);
-        VL_VSNPRINTF(const_cast<char*>(buffer.data()), buffer.capacity(), fmt, args);
+        buffer.reserve(required * 2UL);
+        buffer.resize(buffer.capacity());
+        const int retryResult
+            = VL_VSNPRINTF(const_cast<char*>(buffer.data()), buffer.size(), fmt, args);
+        if (retryResult < 0) {
+            VL_VPI_ERROR_(__FILE__, __LINE__, "VL_VSNPRINTF failed.");
+            return;
+        }
     }
     va_end(args);
+    buffer.resize(result);  // Drop the null terminator, since the buffer is a C++ std::string and
+                            // any null-terminated char* arrays are retrieved with .c_str() which
+                            // adds the null-termination again.
 }
 
 // Information about how to access packed array data.
@@ -2602,6 +2616,23 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     // string data type is dynamic and may vary in size during simulation
     static thread_local std::string t_outDynamicStr;
 
+    // Collect all std::strings that are output to ensure that different valueps point to different
+    // char* arrays, whose lifetime lasts for the whole simulation.
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    static thread_local std::vector<std::unique_ptr<PLI_BYTE8[]>> outputStrings;
+
+    const std::function<PLI_BYTE8*(const std::string&)> storeOutputString
+        = [](const std::string& outputString) {
+              // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+              std::unique_ptr<PLI_BYTE8[]> storedStringp
+                  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+                  = std::make_unique<PLI_BYTE8[]>(outputString.size() + 1);
+              std::memcpy(storedStringp.get(), outputString.c_str(), outputString.size() + 1);
+              PLI_BYTE8* storedStringLocation = storedStringp.get();
+              outputStrings.push_back(std::move(storedStringp));
+              return storedStringLocation;
+          };
+
     const int varBits = vop->bitSize();
 
     // We used to presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
@@ -2645,7 +2676,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             const char val = (datap[pos >> 3] >> (pos & 7)) & 1;
             t_outDynamicStr[varBits - i - 1] = val ? '1' : '0';
         }
-        valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
+        valuep->value.str = storeOutputString(t_outDynamicStr);
         return;
     } else if (valuep->format == vpiOctStrVal) {
         const int chars = (varBits + 2) / 3;
@@ -2654,7 +2685,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             const char val = vl_vpi_get_word(vop, 3, i * 3);
             t_outDynamicStr[chars - i - 1] = '0' + val;
         }
-        valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
+        valuep->value.str = storeOutputString(t_outDynamicStr);
         return;
     } else if (valuep->format == vpiDecStrVal) {
         if (varp->vltype() == VLVT_UINT8) {
@@ -2670,7 +2701,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             vl_strprintf(t_outDynamicStr, "%llu",  // lintok-format-ll
                          static_cast<unsigned long long>(vl_vpi_get_word(vop, 64, 0)));
         }
-        valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
+        valuep->value.str = storeOutputString(t_outDynamicStr);
         return;
     } else if (valuep->format == vpiHexStrVal) {
         const int chars = (varBits + 3) >> 2;
@@ -2679,7 +2710,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             const char val = vl_vpi_get_word(vop, 4, i * 4);
             t_outDynamicStr[chars - i - 1] = "0123456789abcdef"[static_cast<int>(val)];
         }
-        valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
+        valuep->value.str = storeOutputString(t_outDynamicStr);
         return;
     } else if (valuep->format == vpiStringVal) {
         if (varp->vltype() == VLVT_STRING) {
@@ -2688,7 +2719,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
                 return;
             } else {
                 t_outDynamicStr = *(vop->varStringDatap());
-                valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
+                valuep->value.str = storeOutputString(t_outDynamicStr);
                 return;
             }
         } else {
@@ -2699,7 +2730,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
                 // other simulators replace [leading?] zero chars with spaces, replicate here.
                 t_outDynamicStr[chars - i - 1] = val ? val : ' ';
             }
-            valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
+            valuep->value.str = storeOutputString(t_outDynamicStr);
             return;
         }
     } else if (valuep->format == vpiIntVal) {
