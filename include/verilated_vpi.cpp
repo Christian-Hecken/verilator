@@ -2944,38 +2944,18 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         return;
     } else if (valuep->format == vpiStringVal) {
         if (varp->vltype() == VLVT_STRING) {
+            if (VL_UNLIKELY(varp->isForceable())) {
+                VL_VPI_ERROR_(__FILE__, __LINE__,
+                              "attempting to retrieve value of forceable signal %s with data type "
+                              "VLVT_STRING, but strings cannot be forced.",
+                              vop->fullname());
+            }
+
             if (varp->isParam()) {
-
-                // TODO: Replace with error, because strings are not forceable
-                static thread_local std::vector<uint8_t> forceReadCData;
-                forceReadCData
-                    = vop->varp()->isForceable()
-                          ? createReadDataVector<uint8_t>(varDatap,
-                                                          {forceEnableSignalVop->varDatap(),
-                                                           forceValueSignalVop->varDatap()},
-                                                          vop->bitSize())
-                          : std::vector<uint8_t>{};
-                const uint8_t* const varCDatap = vop->varp()->isForceable()
-                                                     ? forceReadCData.data()
-                                                     : reinterpret_cast<CData*>(varDatap);
-
-                valuep->value.str = reinterpret_cast<char*>(const_cast<uint8_t*>(varCDatap));
+                valuep->value.str = reinterpret_cast<char*>(varDatap);
                 return;
             } else {
-
-                // TODO: Replace with error, because strings are not forceable
-                static thread_local std::vector<std::string> forceReadStringData;
-                forceReadStringData
-                    = vop->varp()->isForceable()
-                          ? createStringReadDataVector(varDatap,
-                                                       {forceEnableSignalVop, forceValueSignalVop},
-                                                       vop->bitSize())
-                          : std::vector<std::string>{};
-                const std::string* const varStringDatap = vop->varp()->isForceable()
-                                                              ? forceReadStringData.data()
-                                                              : vop->varStringDatap();
-
-                t_outDynamicStr = *varStringDatap;
+                t_outDynamicStr = *vop->varStringDatap();
                 valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
                 return;
             }

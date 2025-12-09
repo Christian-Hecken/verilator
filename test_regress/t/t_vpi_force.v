@@ -35,6 +35,7 @@ module Test (
 `elsif USE_VPI_NOT_DPI
 `ifdef VERILATOR
   `systemc_header
+    extern "C" int tryCheckingForceableString();
     extern "C" int forceValues();
     extern "C" int releaseValues();
     extern "C" int checkValuesForced();
@@ -43,6 +44,9 @@ module Test (
   `verilog
 `endif
 `else
+`ifdef VERILATOR
+  import "DPI-C" context function int tryCheckingForceableString();
+`endif
   import "DPI-C" context function int forceValues();
   import "DPI-C" context function int releaseValues();
   import "DPI-C" context function int checkValuesPartiallyForced();
@@ -69,7 +73,6 @@ module Test (
   logic [ 63:0] textLong  `PUBLIC_FORCEABLE; // QData
   logic [511:0] text      `PUBLIC_FORCEABLE; // VlWide
   string        str1      `PUBLIC_FORCEABLE; // std::string
-    // TODO: check for error when attempting to force str1 through VPI, because strings can't be forced!
 
   // Force with vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal
   logic [ 7:0]  binString `PUBLIC_FORCEABLE; // CData
@@ -121,9 +124,28 @@ module Test (
     force hexString[31:0] = 32'h55555555;
   endtask
 
-  task automatic vpiForceValues ();
+  task automatic vpiTryCheckingForceableString ();
   integer vpiStatus = 1; // Default to failed status to ensure that a function *not* getting
                          // called also causes simulation termination
+`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
+    vpiStatus = $c32("tryCheckingForceableString()");
+`else
+    vpiStatus = tryCheckingForceableString();
+`endif
+`else
+    $stop; // This task only makes sense with Verilator, since other simulators ignore the "verilator forceable" metacomment.
+`endif
+
+    if (vpiStatus != 0) begin
+      $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
+      $display("C Test failed (forcing string either succeeded, but it should have failed, or produced unexpected error message)");
+      $stop;
+    end
+  endtask
+
+  task automatic vpiForceValues ();
+  integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("forceValues()");
@@ -297,7 +319,11 @@ module Test (
     $dumpvars();
 `endif
 
-// Wait a bit before triggering the force to see a change in the traces
+`ifdef VERILATOR
+    vpiTryCheckingForceableString();
+`endif
+
+    // Wait a bit before triggering the force to see a change in the traces
     #4 vpiForceValues();
 
     // Time delay to ensure setting and checking values does not happen

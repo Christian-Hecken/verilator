@@ -114,7 +114,7 @@ bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
 std::pair<const std::string, const bool> vpiGetErrorMessage() {
     t_vpi_error_info errorInfo{};
     const bool errorOccured = vpi_chk_error(&errorInfo);
-    return {errorInfo.message, errorOccured};
+    return {errorOccured ? errorInfo.message : std::string{}, errorOccured};
 }
 
 #ifdef VERILATOR  // m_varsp is Verilator-specific and does not make sense for other simulators
@@ -451,6 +451,38 @@ extern "C" int checkValuesReleased(void) {
         return 0;
     });
 }
+
+#ifdef VERILATOR
+// These functions only make sense with Verilator, because other simulators either support the
+// functionality (e.g. forcing unpacked signals) or fail at elaboration time (e.g. trying to force
+// a string). The checks for error messages are specific to verilated_vpi.cpp.
+
+extern "C" int tryCheckingForceableString(void) {
+    const std::string forceableStringName = std::string{scopeName} + ".str1";
+    TestVpiHandle const stringSignalHandle  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceableStringName.c_str()), nullptr);
+
+    s_vpi_value value_s{.format = vpiStringVal, .value = {}};
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_get_value(stringSignalHandle, &value_s);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    const std::string expectedErrorMessage
+        = "attempting to retrieve value of forceable signal " + forceableStringName
+          + " with data type VLVT_STRING, but strings cannot be forced.";
+    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
+    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
+    return 0;
+}
+#endif
 
 extern "C" int forceValues(void) {
     if (!TestSimulator::is_verilator()) {
