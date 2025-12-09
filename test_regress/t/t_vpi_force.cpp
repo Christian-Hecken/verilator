@@ -44,7 +44,7 @@ using TestSignal = const struct {
         partialForceValue;  // TODO: Explain reason for bool (DIY optional)
 };
 
-constexpr std::array<TestSignal, 12> TestSignals = {
+constexpr std::array<TestSignal, 11> TestSignals = {
     TestSignal{"onebit", vpiIntVal, {.integer = 1}, {.integer = 0}, {{}, false}},
     TestSignal{"intval",
                vpiIntVal,
@@ -78,11 +78,6 @@ constexpr std::array<TestSignal, 12> TestSignals = {
                {.str = "Verilog Test module"},
                {.str = "lorem ipsum"},
                {{.str = "Verilog Tesem ipsum"}, true}},
-    TestSignal{"str1",
-               vpiStringVal,
-               {.str = "hello"},
-               {.str = "goodbye"},
-               {{}, false}},  // TODO: Explain why no partial force
 
     TestSignal{"binString",
                vpiBinStrVal,

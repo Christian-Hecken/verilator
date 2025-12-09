@@ -69,6 +69,7 @@ module Test (
   logic [ 63:0] textLong  `PUBLIC_FORCEABLE; // QData
   logic [511:0] text      `PUBLIC_FORCEABLE; // VlWide
   string        str1      `PUBLIC_FORCEABLE; // std::string
+    // TODO: check for error when attempting to force str1 through VPI, because strings can't be forced!
 
   // Force with vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal
   logic [ 7:0]  binString `PUBLIC_FORCEABLE; // CData
@@ -86,7 +87,6 @@ module Test (
     textHalf <= "Hf";
     textLong <= "Long64b";
     text <= "Verilog Test module";
-    str1 <= "hello"; // TODO: Remove all assignments, instead check for error when attempting to force through VPI, because strings can't be forced!
 
     binString <= 8'b10101010;
     octString <= 15'o25252; // 0b1010...
@@ -102,7 +102,6 @@ module Test (
     force textHalf = "T2";
     force textLong = "44Four44";
     force text = "lorem ipsum";
-    force str1 = "goodbye";
     force binString = 8'b01010101;
     force octString = 15'o52525;
     force decString = 64'd6148914691236517205;
@@ -154,7 +153,6 @@ module Test (
     release textHalf;
     release textLong;
     release text;
-    release str1;
     release binString;
     release octString;
     release decString;
@@ -192,7 +190,6 @@ module Test (
     if(textHalf != "T2") $stop;
     if(textLong != "44Four44") $stop;
     if(text != "lorem ipsum") $stop;
-    if(str1 != "goodbye") $stop;
     if(binString != 8'b01010101) $stop;
     if(octString != 15'o52525) $stop;
     if(decString != 64'd6148914691236517205) $stop;
@@ -265,7 +262,6 @@ module Test (
     if(textHalf != "Hf") $stop;
     if(textLong != "Long64b") $stop;
     if(text != "Verilog Test module") $stop;
-    if(str1 != "hello") $stop;
     if(binString != 8'b10101010) $stop;
     if(octString != 15'o25252) $stop;
     if(decString != 64'd12297829382473034410) $stop;
@@ -363,7 +359,6 @@ module Test (
     $display("textHalf: %s", textHalf);
     $display("textLong: %s", textLong);
     $display("text: %s", text);
-    $display("str1: %s", str1);
     $display("binString: %x", binString);
     $display("octString: %x", octString);
     $display("decString: %x", decString);

@@ -2963,6 +2963,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
                 return;
             } else {
 
+                // TODO: Replace with error, because strings are not forceable
                 static thread_local std::vector<std::string> forceReadStringData;
                 forceReadStringData
                     = vop->varp()->isForceable()
