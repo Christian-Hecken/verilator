@@ -1094,6 +1094,29 @@ public:
         if (varBits % wordSize != 0)
             vl_vpi_put_word(vop, word, varBits % wordSize, numChunks * wordSize);
     }
+
+    // Recreates the __VforceRd signal's data vector, since __VforceRd is not publicly accessible
+    // in Verilated code.
+    template <typename T>
+    static std::vector<T>
+    createReadDataVector(const void* const baseSignalDatap,
+                         const std::pair<const void*, const void*> forceControlDatap,
+                         const std::size_t bitCount) {
+        const void* const forceEnableDatap = forceControlDatap.first;
+        const void* const forceValueDatap = forceControlDatap.second;
+        assert(bitCount > 0);
+        const std::size_t numWords = (bitCount + (8 * sizeof(T)) - 1) / (8 * sizeof(T));  // Ceil
+        std::vector<T> readData(numWords);
+        for (std::size_t i{0}; i < numWords; ++i) {
+            const T forceEnableWord = reinterpret_cast<const T*>(forceEnableDatap)[i];
+            const T forceValueWord = reinterpret_cast<const T*>(forceValueDatap)[i];
+            const T baseSignalWord = reinterpret_cast<const T*>(baseSignalDatap)[i];
+            const T readDataWord
+                = (forceEnableWord & forceValueWord) | (~forceEnableWord & baseSignalWord);
+            readData[i] = readDataWord;
+        }
+        return readData;
+    }
 };
 
 //======================================================================
@@ -2654,28 +2677,6 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
     }
 }
 
-// Recreates the __VforceRd signal's data vector, since __VforceRd is not publicly accessible in
-// Verilated code.
-template <typename T>
-std::vector<T> createReadDataVector(const void* const baseSignalDatap,
-                                    const std::pair<const void*, const void*> forceControlDatap,
-                                    const std::size_t bitCount) {
-    const void* const forceEnableDatap = forceControlDatap.first;
-    const void* const forceValueDatap = forceControlDatap.second;
-    assert(bitCount > 0);
-    const std::size_t numWords = (bitCount + (8 * sizeof(T)) - 1) / (8 * sizeof(T));  // Ceil
-    std::vector<T> readData(numWords);
-    for (std::size_t i{0}; i < numWords; ++i) {
-        const T forceEnableWord = reinterpret_cast<const T*>(forceEnableDatap)[i];
-        const T forceValueWord = reinterpret_cast<const T*>(forceValueDatap)[i];
-        const T baseSignalWord = reinterpret_cast<const T*>(baseSignalDatap)[i];
-        const T readDataWord
-            = (forceEnableWord & forceValueWord) | (~forceEnableWord & baseSignalWord);
-        readData[i] = readDataWord;
-    }
-    return readData;
-}
-
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
     void* const varDatap = vop->varDatap();
@@ -2793,12 +2794,13 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         t_outDynamicStr.resize(varBits);
 
         static thread_local std::vector<uint8_t> forceReadCData;
-        forceReadCData = vop->varp()->isForceable()
-                             ? createReadDataVector<uint8_t>(varDatap,
-                                                             {forceEnableSignalVop->varDatap(),
-                                                              forceValueSignalVop->varDatap()},
-                                                             vop->bitSize())
-                             : std::vector<uint8_t>{};
+        forceReadCData
+            = vop->varp()->isForceable()
+                  ? VerilatedVpiImp::createReadDataVector<uint8_t>(
+                        varDatap,
+                        {forceEnableSignalVop->varDatap(), forceValueSignalVop->varDatap()},
+                        vop->bitSize())
+                  : std::vector<uint8_t>{};
         const uint8_t* const varCDatap = vop->varp()->isForceable()
                                              ? forceReadCData.data()
                                              : reinterpret_cast<CData*>(varDatap);
