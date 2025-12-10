@@ -3130,59 +3130,42 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 1);
         }
         if (forceFlag == vpiReleaseFlag) {
-            // Step 1: Deactivate __VforceEn
-            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
-            // Step 2: Set valuep
             const bool isContinuously = false;
             // TODO: valuep should be set to the value of the signal after release. For
             // continuously assigned signals, this means the signal gets the value it was initially
             // assigned to. For any other signal, it retains the forced value until another event
             // occurs that changes its value. Need to implement the ability to access
             // isContinuously in Verilated code.
-            if (isContinuously) {
-                vl_vpi_get_value(baseSignalVop, valuep);
 
-                t_vpi_error_info baseValueGetError{};
-                const bool errorOccurred = vpi_chk_error(&baseValueGetError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
-                    const std::string baseValueSignalName = baseSignalVop->fullname();
-                    const std::string previousErrorMessage = baseValueGetError.message;
-                    VL_VPI_ERROR_(__FILE__, __LINE__,
-                                  "%s: Could not retrieve value of signal '%s' with "
-                                  "vpiHandle '%p'. Error message: %s",
-                                  __func__, baseValueSignalName.c_str(), object,
-                                  previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNCOVERABLE(errorOccurred && baseValueGetError.level < vpiError)) {
-                    vpi_printf(baseValueGetError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
-            } else {
-                vl_vpi_get_value(forceValueSignalVop, valuep);
+            // If signal is continuously assigned, first clear the force enable bits, then get the
+            // (non-forced) value. Else, get the (still forced) value first, then clear the force
+            // enable bits.
 
-                t_vpi_error_info forceValueGetError{};
-                const bool errorOccurred = vpi_chk_error(&forceValueGetError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level >= vpiError)) {
-                    const std::string forceValueSignalName = forceValueSignalVop->fullname();
-                    std::string previousErrorMessage = forceValueGetError.message;
-                    VL_VPI_ERROR_(__FILE__, __LINE__,
-                                  "%s: Could not retrieve value of force value signal '%s' with "
-                                  "vpiHandle '%p'. Error message: %s",
-                                  __func__, forceValueSignalName.c_str(), forceValueSignalp,
-                                  previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNCOVERABLE(errorOccurred && forceValueGetError.level < vpiError)) {
-                    vpi_printf(forceValueGetError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
+            if (isContinuously) VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
+
+            vl_vpi_get_value(baseSignalVop, valuep);
+
+            t_vpi_error_info baseValueGetError{};
+            const bool errorOccurred = vpi_chk_error(&baseValueGetError);
+            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+            if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
+                const std::string baseValueSignalName = baseSignalVop->fullname();
+                const std::string previousErrorMessage = baseValueGetError.message;
+                VL_VPI_ERROR_(__FILE__, __LINE__,
+                              "%s: Could not retrieve value of signal '%s' with "
+                              "vpiHandle '%p'. Error message: %s",
+                              __func__, baseValueSignalName.c_str(), object,
+                              previousErrorMessage.c_str());
+                return nullptr;
             }
+            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+            if (VL_UNCOVERABLE(errorOccurred && baseValueGetError.level < vpiError)) {
+                vpi_printf(baseValueGetError.message);
+                VL_VPI_ERROR_RESET_();
+            }
+
+            if (!isContinuously) VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
             // TODO: According to the SystemVerilog specification,
             // vpi_put_value should return a handle to the scheduled event

@@ -39,6 +39,7 @@ module Test (
     extern "C" int tryCheckingUnpackedSignal();
     extern "C" int forceValues();
     extern "C" int releaseValues();
+    extern "C" int releasePartiallyForcedValues();
     extern "C" int checkValuesForced();
     extern "C" int checkValuesPartiallyForced();
     extern "C" int checkValuesReleased();
@@ -52,6 +53,7 @@ module Test (
 `endif
   import "DPI-C" context function int forceValues();
   import "DPI-C" context function int releaseValues();
+  import "DPI-C" context function int releasePartiallyForcedValues();
   import "DPI-C" context function int checkValuesPartiallyForced();
   import "DPI-C" context function int checkValuesForced();
   import "DPI-C" context function int checkValuesReleased();
@@ -248,6 +250,29 @@ module Test (
     end
   endtask
 
+  task automatic vpiReleasePartiallyForcedValues ();
+  integer vpiStatus = 1;
+`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
+    vpiStatus = $c32("releasePartiallyForcedValues()");
+`else
+    vpiStatus = releasePartiallyForcedValues();
+`endif
+`elsif IVERILOG
+    vpiStatus = $releasePartiallyForcedValues;
+`elsif USE_VPI_NOT_DPI
+    vpiStatus = $releasePartiallyForcedValues;
+`else
+    vpiStatus = releasePartiallyForcedValues();
+`endif
+
+    if (vpiStatus != 0) begin
+      $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
+      $display("C Test failed (could not release value)");
+      $stop;
+    end
+  endtask
+
   task automatic svCheckValuesForced ();
     if(onebit != 0) $stop;
     if(intval != 32'h55555555) $stop;
@@ -402,7 +427,7 @@ module Test (
     #4 svPartiallyForceValues();
     #4 vpiCheckValuesPartiallyForced();
        svCheckValuesPartiallyForced();
-    #4 vpiReleaseValues();
+    #4 vpiReleasePartiallyForcedValues();
     #4 vpiCheckValuesReleased();
        svCheckValuesReleased();
 

@@ -423,11 +423,17 @@ int releaseSignal(const std::string& scopeName, const std::string& testSignalNam
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
-    // TODO: Correct value for value_s is not implemented yet in vpi_put_value with vpiReleaseFlag,
-    // so for now it will always return the force value.
 
-    // NOLINTNEXTLINE(concurrency-mt-unsafe, performance-avoid-endl)
-    // CHECK_RESULT(value_s.value.integer, forceValue) // TODO
+    // TODO: Correct value for value_s is not implemented yet in vpi_put_value with
+    // vpiReleaseFlag, so for now it will always return the force value in Verilator.
+    // For this test, this makes no difference since none of the signals are continuously assigned.
+
+    const std::unique_ptr<s_vpi_value> expectedValueSp
+        = vpiValueWithFormat(signalFormat, forceValue);
+    CHECK_RESULT_NZ(expectedValueSp);  // NOLINT(concurrency-mt-unsafe)
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
 
     return 0;
 }
@@ -573,6 +579,22 @@ extern "C" int releaseValues(void) {
     });
 }
 
+extern "C" int releasePartiallyForcedValues(void) {
+    // Skip any values that cannot be partially forced. Can't just reuse releaseValues, because the
+    // output argument s_vpi_value of vpi_put_value with vpiReleaseFlag differs depending on
+    // whether or not a signal was forced before, and not all signals are forced in the partial
+    // forcing test.
+    CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+        std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
+            if (signal.partialForceValue.second)
+                CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+                    releaseSignal(scopeName, signal.signalName, signal.valueType,
+                                  signal.partialForceValue.first));
+            return 0;
+        }));
+    return 0;
+}
+
 #ifdef IS_VPI
 
 static int checkValuesForcedVpi() {
@@ -630,11 +652,24 @@ static int releaseValuesVpi() {
     return 0;
 }
 
-std::array<s_vpi_systf_data, 5> vpi_systf_data
+static int releasePartiallyForcedValuesVpi() {
+    TestVpiHandle href = vpi_handle(vpiSysTfCall, 0);
+    s_vpi_value vpiValue;
+
+    vpiValue.format = vpiIntVal;
+    vpiValue.value.integer = releasePartiallyForcedValues();
+    vpi_put_value(href, &vpiValue, NULL, vpiNoDelay);
+
+    return 0;
+}
+
+std::array<s_vpi_systf_data, 6> vpi_systf_data
     = {s_vpi_systf_data{vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$forceValues",
                         (PLI_INT32(*)(PLI_BYTE8*))forceValuesVpi, 0, 0, 0},
        s_vpi_systf_data{vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$releaseValues",
                         (PLI_INT32(*)(PLI_BYTE8*))releaseValuesVpi, 0, 0, 0},
+       s_vpi_systf_data{vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$releasePartiallyForcedValues",
+                        (PLI_INT32(*)(PLI_BYTE8*))releasePartiallyForcedValuesVpi, 0, 0, 0},
        s_vpi_systf_data{vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$checkValuesForced",
                         (PLI_INT32(*)(PLI_BYTE8*))checkValuesForcedVpi, 0, 0, 0},
        s_vpi_systf_data{vpiSysFunc, vpiIntFunc, (PLI_BYTE8*)"$checkValuesPartiallyForced",
