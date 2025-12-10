@@ -2653,18 +2653,12 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
     }
 }
 
+// Recreates the __VforceRd signal's data vector, since __VforceRd is not publicly accessible in
+// Verilated code.
 template <typename T>
 std::vector<T> createReadDataVector(const void* const baseSignalDatap,
                                     const std::pair<const void*, const void*> forceControlDatap,
                                     const std::size_t bitCount) {
-    // TODO: Specialization for double -- see above:
-    // if (vop->varp()->vltype() == VLVT_REAL) varBits *= sizeof(double) * 8;
-    // TODO: How *does* a __VforceEn signal for Reals look like anyway? Can't mask it like
-    // individual bits, right?
-    // TODO: Turns out, __VforceEn and __VforceVal do *NOT* always have the same data type as
-    // assumed previously! -> For real, __VforceEn is CData! (1 CData per real, so can't force
-    // reals bit-wise)
-    // Would be nice to have `isRangedDType` in Verilated code
     const void* const forceEnableDatap = forceControlDatap.first;
     const void* const forceValueDatap = forceControlDatap.second;
     assert(bitCount > 0);

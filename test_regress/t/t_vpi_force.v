@@ -6,7 +6,6 @@
 
 `define STRINGIFY(x) `"x`"
 
-// TODO: Comes from vpi_get -> define in .py
 `ifdef VERILATOR_COMMENTS
  `define PUBLIC_FORCEABLE /*verilator public_flat_rw*/  /*verilator forceable*/
 `else
@@ -58,14 +57,9 @@ module Test (
   import "DPI-C" context function int checkValuesReleased();
 `endif
 
-
-
-
-// TODO: Confirm data types in __Syms
-
   // Non-forceable signals that should raise errors
   string        str1           `PUBLIC_FORCEABLE; // std::string
-  logic         unpacked [1:0] `PUBLIC_FORCEABLE;
+  logic         unpacked [0:1] `PUBLIC_FORCEABLE; // CData
 
   // Force with vpiIntVal
   logic         onebit         `PUBLIC_FORCEABLE; // CData
@@ -84,9 +78,13 @@ module Test (
 
   // Force with vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal
   logic [ 7:0]  binString      `PUBLIC_FORCEABLE; // CData
-  logic [ 14:0] octString      `PUBLIC_FORCEABLE; // SData // TODO: ?
+  logic [ 14:0] octString      `PUBLIC_FORCEABLE; // SData
   logic [ 63:0] decString      `PUBLIC_FORCEABLE; // QData
   logic [ 63:0] hexString      `PUBLIC_FORCEABLE; // QData
+
+  // Continuously assigned signals:
+  logic onebitContinuously `PUBLIC_FORCEABLE;
+  assign onebitContinuously = 1;
 
   always @(posedge clk) begin
     onebit <= 1;
@@ -180,7 +178,7 @@ module Test (
     vpiStatus = tryCheckingUnpackedSignal();
 `endif
 `else
-    $stop; // This task only makes sense with Verilator // TODO: Explain why
+    $stop; // This task only makes sense with Verilator, since other simulators support forcing unpacked signals.
 `endif
 
     if (vpiStatus != 0) begin

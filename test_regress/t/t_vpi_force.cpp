@@ -8,8 +8,7 @@
 //
 // This test checks that forcing a signal using vpi_put_value with vpiForceFlag
 // sets it to the correct value, and then releasing it with vpiReleaseFlag
-// returns it to the initial state. This is a basic test that just checks the
-// correct behavior for a clocked register being forced with a VpiIntVal.
+// returns it to the initial state.
 
 #include "verilated.h"  // For VL_PRINTF
 #include "verilated_sym_props.h"  // For VerilatedVar
@@ -27,9 +26,8 @@ namespace {
 constexpr int maxAllowedErrorLevel = vpiWarning;
 const std::string scopeName = "t.test";
 
-// TODO: Rename
 using signalValueTypes = union {
-    const char* str;  // TODO: Maybe turn into string in case the array can't be kept constexpr
+    const char* str;
     PLI_INT32 integer;
     double real;
     const struct t_vpi_vecval* vector;
@@ -41,31 +39,43 @@ using TestSignal = const struct {
     signalValueTypes releaseValue;
     signalValueTypes forceValue;
     std::pair<signalValueTypes, bool>
-        partialForceValue;  // TODO: Explain reason for bool (DIY optional)
+        partialForceValue;  // No std::optional on C++14, so the bool inside the pair is used to
+                            // specify if a partial force should be tested for this signal. For a
+                            // partial force, the first part of the signal is left at the release
+                            // value, while the second part is forced to the force value.
 };
 
 constexpr std::array<TestSignal, 11> TestSignals = {
-    TestSignal{"onebit", vpiIntVal, {.integer = 1}, {.integer = 0}, {{}, false}},
+    TestSignal{"onebit",
+               vpiIntVal,
+               {.integer = 1},
+               {.integer = 0},
+               {{}, false}},  // Can't partially force just one bit
     TestSignal{"intval",
                vpiIntVal,
-               {.integer = -1431655766},
-               {.integer = 0x55555555},
-               {{.integer = -1431677611}, true}},  // TODO: Explain values
+               {.integer = -1431655766},  // 1010...1010
+               {.integer = 0x55555555},  // 0101...0101
+               {{.integer = -1431677611}, true}},  // 1010...010_010...0101
 
     TestSignal{
         "quad",
         vpiVectorVal,
         // NOTE: This is a 62 bit signal, so the first two bits of the MSBs (*second* vecval,
         // since the LSBs come first) are set to 0, hence the 0x2 and 0x1, respectively.
-        {.vector = (t_vpi_vecval[]){{0xAAAAAAAAUL, 0}, {0x2AAAAAAAUL, 0}}},
-        {.vector = (t_vpi_vecval[]){{0x55555555UL, 0}, {0x15555555UL, 0}}},
-        {{.vector = (t_vpi_vecval[]){{0xD5555555UL, 0}, {0x2AAAAAAAUL, 0}}}, true}},
+
+        // NOLINTBEGIN (cppcoreguidelines-avoid-c-arrays)
+        {.vector = (t_vpi_vecval[]){{0xAAAAAAAAUL, 0}, {0x2AAAAAAAUL, 0}}},  // (00)1010...1010
+        {.vector = (t_vpi_vecval[]){{0x55555555UL, 0}, {0x15555555UL, 0}}},  // (00)0101...0101
+        {{.vector = (t_vpi_vecval[]){{0xD5555555UL, 0}, {0x2AAAAAAAUL, 0}}},
+         true}},  // 1010...010_010...0101
+    // NOLINTEND (cppcoreguidelines-avoid-c-arrays)
 
     TestSignal{"real1",
                vpiRealVal,
                {.real = 1.0},
                {.real = 123456.789},
-               {{}, false}},  // TODO: Explain why no partial force
+               {{}, false}},  // reals cannot be packed and individual bits cannot be accessed, so
+                              // there is no way to partially force a real signal.
 
     TestSignal{"textHalf", vpiStringVal, {.str = "Hf"}, {.str = "T2"}, {{.str = "H2"}, true}},
     TestSignal{"textLong",
@@ -86,19 +96,19 @@ constexpr std::array<TestSignal, 11> TestSignals = {
                {{.str = "10100101"}, true}},
     TestSignal{"octString",
                vpiOctStrVal,
-               {.str = "25252"},
-               {.str = "52525"},
-               {{.str = "25325"}, true}},  // TODO: Explain
+               {.str = "25252"},  // 10101010101010
+               {.str = "52525"},  // 101010101010101
+               {{.str = "25325"}, true}},  // 10101011010101
     TestSignal{"decString",
                vpiDecStrVal,
-               {.str = "12297829382473034410"},
-               {.str = "6148914691236517205"},
-               {{.str = "12297829381041378645"}, true}},
+               {.str = "12297829382473034410"},  // 1010...1010
+               {.str = "6148914691236517205"},  // 0101...0101
+               {{.str = "12297829381041378645"}, true}},  // 1010...010_010...0101
     TestSignal{"hexString",
                vpiHexStrVal,
-               {.str = "aaaaaaaaaaaaaaaa"},
-               {.str = "5555555555555555"},
-               {{.str = "aaaaaaaa55555555"}, true}},
+               {.str = "aaaaaaaaaaaaaaaa"},  // 1010...1010
+               {.str = "5555555555555555"},  // 0101...0101
+               {{.str = "aaaaaaaa55555555"}, true}},  // 1010...010_010...0101
 };
 
 bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
@@ -131,7 +141,7 @@ std::unique_ptr<const VerilatedVar> removeSignalFromScope(const std::string& sco
 }
 
 bool insertSignalIntoScope(const std::pair<std::string, std::string>& scopeAndSignalNames,
-                           std::unique_ptr<const VerilatedVar> signal) {
+                           const std::unique_ptr<const VerilatedVar> signal) {
     const std::string& scopeName = scopeAndSignalNames.first;
     const std::string& signalName = scopeAndSignalNames.second;
 
@@ -153,7 +163,7 @@ bool insertSignalIntoScope(const std::pair<std::string, std::string>& scopeAndSi
 }
 
 int tryVpiGetWithMissingSignal(const TestVpiHandle& signalToGet,  // NOLINT(misc-misplaced-const)
-                               PLI_INT32 signalFormat,
+                               const PLI_INT32 signalFormat,
                                const std::pair<std::string, std::string>& scopeAndSignalNames,
                                const std::string& expectedErrorMessage) {
     const std::string& scopeName = scopeAndSignalNames.first;
@@ -222,11 +232,11 @@ bool vpiValuesEqual(const std::size_t bitCount, const s_vpi_value& first,
     switch (first.format) {
     case vpiIntVal: return first.value.integer == second.value.integer; break;
     case vpiVectorVal: {
-        const t_vpi_vecval* const first_vecval = first.value.vector;
-        const t_vpi_vecval* const second_vecval = second.value.vector;
+        const t_vpi_vecval* const firstVecval = first.value.vector;
+        const t_vpi_vecval* const secondVecval = second.value.vector;
         const std::size_t vectorElements = (bitCount + 31) / 32;  // Ceil
         for (std::size_t i{0}; i < vectorElements; ++i) {
-            if (first_vecval[i].aval != second_vecval[i].aval) return false;
+            if (firstVecval[i].aval != secondVecval[i].aval) return false;
         }
         return true;
     }
@@ -239,12 +249,10 @@ bool vpiValuesEqual(const std::size_t bitCount, const s_vpi_value& first,
     case vpiOctStrVal:
     case vpiDecStrVal:
     case vpiHexStrVal: {
-        // TODO: Understand what this does:
-        // #define CHECK_RESULT_CSTR_STRIP(got, exp) CHECK_RESULT_CSTR(got + strspn(got, " "), exp)
-        const std::string fixed_received = first.value.str + std::strspn(first.value.str, " ");
-        return std::string{fixed_received} == std::string{second.value.str};
+        // Same as CHECK_RESULT_CSTR_STRIP, but should return true when equal, false otherwise
+        const std::string firstUnpadded = first.value.str + std::strspn(first.value.str, " ");
+        return std::string{firstUnpadded} == std::string{second.value.str};
         break;
-        // return std::strcmp(first.value.str, second.value.str) == 0; break; // TODO: REMOVE
     }
     default:
         VL_PRINTF("Unsupported value format %i passed to vpiValuesEqual\n", first.format);
@@ -252,7 +260,8 @@ bool vpiValuesEqual(const std::size_t bitCount, const s_vpi_value& first,
     }
 }
 
-std::unique_ptr<s_vpi_value> vpiValueWithFormat(PLI_INT32 signalFormat, signalValueTypes value) {
+std::unique_ptr<s_vpi_value> vpiValueWithFormat(const PLI_INT32 signalFormat,
+                                                const signalValueTypes value) {
     std::unique_ptr<s_vpi_value> value_sp = std::make_unique<s_vpi_value>();
     value_sp->format = signalFormat;
 
@@ -274,7 +283,7 @@ std::unique_ptr<s_vpi_value> vpiValueWithFormat(PLI_INT32 signalFormat, signalVa
 }
 
 int checkValue(const std::string& scopeName, const std::string& testSignalName,
-               PLI_INT32 signalFormat, signalValueTypes expectedValue) {
+               const PLI_INT32 signalFormat, const signalValueTypes expectedValue) {
     const std::string testSignalFullName
         = std::string{scopeName} + "." + std::string{testSignalName};
     TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
@@ -313,7 +322,8 @@ int checkValue(const std::string& scopeName, const std::string& testSignalName,
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
 
-    std::unique_ptr<s_vpi_value> expectedValueSp = vpiValueWithFormat(signalFormat, expectedValue);
+    const std::unique_ptr<s_vpi_value> expectedValueSp
+        = vpiValueWithFormat(signalFormat, expectedValue);
     CHECK_RESULT_NZ(expectedValueSp);  // NOLINT(concurrency-mt-unsafe)
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     CHECK_RESULT_NZ(
@@ -323,7 +333,7 @@ int checkValue(const std::string& scopeName, const std::string& testSignalName,
 }
 
 int forceSignal(const std::string& scopeName, const std::string& testSignalName,
-                PLI_INT32 signalFormat, signalValueTypes forceValue) {
+                const PLI_INT32 signalFormat, const signalValueTypes forceValue) {
     const std::string testSignalFullName
         = std::string{scopeName} + "." + std::string{testSignalName};
     TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
@@ -370,8 +380,7 @@ int forceSignal(const std::string& scopeName, const std::string& testSignalName,
 }
 
 int releaseSignal(const std::string& scopeName, const std::string& testSignalName,
-                  PLI_INT32 signalFormat,
-                  signalValueTypes forceValue) {  // TODO: const correctness
+                  const PLI_INT32 signalFormat, const signalValueTypes forceValue) {
     const std::string testSignalFullName
         = std::string{scopeName} + "." + std::string{testSignalName};
     TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
@@ -426,30 +435,35 @@ int releaseSignal(const std::string& scopeName, const std::string& testSignalNam
 }  // namespace
 
 extern "C" int checkValuesForced(void) {
-    // TODO: The any_of functions just return 0 or 1, but we really want to return the line number!
-    return std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
-        CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-            checkValue(scopeName, signal.signalName, signal.valueType, signal.forceValue));
-        return 0;
-    });
+    CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+        std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
+            CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+                checkValue(scopeName, signal.signalName, signal.valueType, signal.forceValue));
+            return 0;
+        }));
+    return 0;
 }
 
 extern "C" int checkValuesPartiallyForced(void) {
-    return std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
-        if (signal.partialForceValue.second)
-            CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-                checkValue(scopeName, signal.signalName, signal.valueType,
-                           signal.partialForceValue.first));
-        return 0;
-    });
+    CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+        std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
+            if (signal.partialForceValue.second)
+                CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+                    checkValue(scopeName, signal.signalName, signal.valueType,
+                               signal.partialForceValue.first));
+            return 0;
+        }));
+    return 0;
 }
 
 extern "C" int checkValuesReleased(void) {
-    return std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
-        CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-            checkValue(scopeName, signal.signalName, signal.valueType, signal.releaseValue));
-        return 0;
-    });
+    CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+        std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
+            CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
+                checkValue(scopeName, signal.signalName, signal.valueType, signal.releaseValue));
+            return 0;
+        }));
+    return 0;
 }
 
 #ifdef VERILATOR
