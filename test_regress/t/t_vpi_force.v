@@ -7,9 +7,9 @@
 `define STRINGIFY(x) `"x`"
 
 `ifdef VERILATOR_COMMENTS
- `define PUBLIC_FORCEABLE /*verilator public_flat_rw*/  /*verilator forceable*/
+`define PUBLIC_FORCEABLE /*verilator public_flat_rw*/  /*verilator forceable*/
 `else
- `define PUBLIC_FORCEABLE
+`define PUBLIC_FORCEABLE
 `endif
 
 module t;
@@ -33,17 +33,17 @@ module Test (
 `ifdef IVERILOG
 `elsif USE_VPI_NOT_DPI
 `ifdef VERILATOR
-  `systemc_header
-    extern "C" int tryCheckingForceableString();
-    extern "C" int tryForcingUnpackedSignal();
-    extern "C" int tryCheckingUnpackedSignal();
-    extern "C" int forceValues();
-    extern "C" int releaseValues();
-    extern "C" int releasePartiallyForcedValues();
-    extern "C" int checkValuesForced();
-    extern "C" int checkValuesPartiallyForced();
-    extern "C" int checkValuesReleased();
-  `verilog
+`systemc_header
+  extern "C" int tryCheckingForceableString();
+  extern "C" int tryForcingUnpackedSignal();
+  extern "C" int tryCheckingUnpackedSignal();
+  extern "C" int forceValues();
+  extern "C" int releaseValues();
+  extern "C" int releasePartiallyForcedValues();
+  extern "C" int checkValuesForced();
+  extern "C" int checkValuesPartiallyForced();
+  extern "C" int checkValuesReleased();
+`verilog
 `endif
 `else
 `ifdef VERILATOR
@@ -100,12 +100,12 @@ module Test (
     text <= "Verilog Test module";
 
     binString <= 8'b10101010;
-    octString <= 15'o25252; // 0b1010...
-    decString <= 64'd12297829382473034410; // 0b1010...
-    hexString <= 64'hAAAAAAAAAAAAAAAA; // 0b1010...
+    octString <= 15'o25252;  // 0b1010...
+    decString <= 64'd12297829382473034410;  // 0b1010...
+    hexString <= 64'hAAAAAAAAAAAAAAAA;  // 0b1010...
   end
 
-  task automatic svForceValues ();
+  task automatic svForceValues();
     force onebit = 0;
     force intval = 32'h55555555;
     force quad = 62'h15555555_55555555;
@@ -119,7 +119,7 @@ module Test (
     force hexString = 64'h5555555555555555;
   endtask
 
-  task automatic svPartiallyForceValues ();
+  task automatic svPartiallyForceValues();
     force intval[15:0] = 16'h5555;
     force quad[30:0] = 31'h55555555;
     force textHalf[7:0] = "2";
@@ -132,9 +132,9 @@ module Test (
     force hexString[31:0] = 32'h55555555;
   endtask
 
-  task automatic vpiTryCheckingForceableString ();
-  integer vpiStatus = 1; // Default to failed status to ensure that a function *not* getting
-                         // called also causes simulation termination
+  task automatic vpiTryCheckingForceableString();
+    integer vpiStatus = 1;  // Default to failed status to ensure that a function *not* getting
+                            // called also causes simulation termination
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("tryCheckingForceableString()");
@@ -147,13 +147,14 @@ module Test (
 
     if (vpiStatus != 0) begin
       $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
-      $display("C Test failed (forcing string either succeeded even though it should have failed, or produced unexpected error message)");
+      $display(
+          "C Test failed (forcing string either succeeded even though it should have failed, or produced unexpected error message)");
       $stop;
     end
   endtask
 
-  task automatic vpiTryForcingUnpackedSignal ();
-  integer vpiStatus = 1;
+  task automatic vpiTryForcingUnpackedSignal();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("tryForcingUnpackedSignal()");
@@ -166,13 +167,14 @@ module Test (
 
     if (vpiStatus != 0) begin
       $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
-      $display("C Test failed (forcing unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
+      $display(
+          "C Test failed (forcing unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
       $stop;
     end
   endtask
 
-  task automatic vpiTryCheckingUnpackedSignal ();
-  integer vpiStatus = 1;
+  task automatic vpiTryCheckingUnpackedSignal();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("tryCheckingUnpackedSignal()");
@@ -185,13 +187,14 @@ module Test (
 
     if (vpiStatus != 0) begin
       $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
-      $display("C Test failed (vpi_get_value on forceable unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
+      $display(
+          "C Test failed (vpi_get_value on forceable unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
       $stop;
     end
   endtask
 
-  task automatic vpiForceValues ();
-  integer vpiStatus = 1;
+  task automatic vpiForceValues();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("forceValues()");
@@ -213,7 +216,7 @@ module Test (
     end
   endtask
 
-  task automatic svReleaseValues ();
+  task automatic svReleaseValues();
     release onebit;
     release intval;
     release quad;
@@ -227,8 +230,8 @@ module Test (
     release hexString;
   endtask
 
-  task automatic vpiReleaseValues ();
-  integer vpiStatus = 1;
+  task automatic vpiReleaseValues();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("releaseValues()");
@@ -250,8 +253,8 @@ module Test (
     end
   endtask
 
-  task automatic vpiReleasePartiallyForcedValues ();
-  integer vpiStatus = 1;
+  task automatic vpiReleasePartiallyForcedValues();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("releasePartiallyForcedValues()");
@@ -273,22 +276,22 @@ module Test (
     end
   endtask
 
-  task automatic svCheckValuesForced ();
-    if(onebit != 0) $stop;
-    if(intval != 32'h55555555) $stop;
-    if(quad != 62'h15555555_55555555) $stop;
-    if(real1 != 123456.789) $stop;
-    if(textHalf != "T2") $stop;
-    if(textLong != "44Four44") $stop;
-    if(text != "lorem ipsum") $stop;
-    if(binString != 8'b01010101) $stop;
-    if(octString != 15'o52525) $stop;
-    if(decString != 64'd6148914691236517205) $stop;
-    if(hexString != 64'h5555555555555555) $stop;
+  task automatic svCheckValuesForced();
+    if (onebit != 0) $stop;
+    if (intval != 32'h55555555) $stop;
+    if (quad != 62'h15555555_55555555) $stop;
+    if (real1 != 123456.789) $stop;
+    if (textHalf != "T2") $stop;
+    if (textLong != "44Four44") $stop;
+    if (text != "lorem ipsum") $stop;
+    if (binString != 8'b01010101) $stop;
+    if (octString != 15'o52525) $stop;
+    if (decString != 64'd6148914691236517205) $stop;
+    if (hexString != 64'h5555555555555555) $stop;
   endtask
 
-  task automatic vpiCheckValuesForced ();
-  integer vpiStatus = 1;
+  task automatic vpiCheckValuesForced();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("checkValuesForced()");
@@ -310,20 +313,20 @@ module Test (
     end
   endtask
 
-  task automatic svCheckValuesPartiallyForced ();
-    if(intval != 32'hAAAA_5555) $stop;
-    if(quad != 62'h2AAAAAAAD5555555) $stop;
-    if(textHalf != "H2") $stop;
-    if(textLong != "Lonur44") $stop;
-    if(text != "Verilog Tesem ipsum") $stop;
-    if(binString != 8'b1010_0101) $stop;
-    if(octString != 15'b01010101_1010101) $stop;
-    if(decString != 64'hAAAAAAAA_55555555) $stop;
-    if(hexString != 64'hAAAAAAAA_55555555) $stop;
+  task automatic svCheckValuesPartiallyForced();
+    if (intval != 32'hAAAA_5555) $stop;
+    if (quad != 62'h2AAAAAAAD5555555) $stop;
+    if (textHalf != "H2") $stop;
+    if (textLong != "Lonur44") $stop;
+    if (text != "Verilog Tesem ipsum") $stop;
+    if (binString != 8'b1010_0101) $stop;
+    if (octString != 15'b01010101_1010101) $stop;
+    if (decString != 64'hAAAAAAAA_55555555) $stop;
+    if (hexString != 64'hAAAAAAAA_55555555) $stop;
   endtask
 
-  task automatic vpiCheckValuesPartiallyForced ();
-  integer vpiStatus = 1;
+  task automatic vpiCheckValuesPartiallyForced();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("checkValuesPartiallyForced()");
@@ -345,22 +348,22 @@ module Test (
     end
   endtask
 
-  task automatic svCheckValuesReleased ();
-    if(onebit != 1) $stop;
-    if(intval != -1431655766) $stop;
-    if(quad != 62'h2AAAAAAA_AAAAAAAA) $stop;
-    if(real1 != 1.0) $stop;
-    if(textHalf != "Hf") $stop;
-    if(textLong != "Long64b") $stop;
-    if(text != "Verilog Test module") $stop;
-    if(binString != 8'b10101010) $stop;
-    if(octString != 15'o25252) $stop;
-    if(decString != 64'd12297829382473034410) $stop;
-    if(hexString != 64'hAAAAAAAAAAAAAAAA) $stop;
+  task automatic svCheckValuesReleased();
+    if (onebit != 1) $stop;
+    if (intval != -1431655766) $stop;
+    if (quad != 62'h2AAAAAAA_AAAAAAAA) $stop;
+    if (real1 != 1.0) $stop;
+    if (textHalf != "Hf") $stop;
+    if (textLong != "Long64b") $stop;
+    if (text != "Verilog Test module") $stop;
+    if (binString != 8'b10101010) $stop;
+    if (octString != 15'o25252) $stop;
+    if (decString != 64'd12297829382473034410) $stop;
+    if (hexString != 64'hAAAAAAAAAAAAAAAA) $stop;
   endtask
 
-  task automatic vpiCheckValuesReleased ();
-  integer vpiStatus = 1;
+  task automatic vpiCheckValuesReleased();
+    integer vpiStatus = 1;
 `ifdef VERILATOR
 `ifdef USE_VPI_NOT_DPI
     vpiStatus = $c32("checkValuesReleased()");
@@ -384,7 +387,7 @@ module Test (
 
   initial begin
 `ifdef WAVES
-    $dumpfile(`STRINGIFY(`TEST_DUMPFILE));
+$dumpfile(`STRINGIFY(`TEST_DUMPFILE));
     $dumpvars();
 `endif
 
@@ -401,44 +404,44 @@ module Test (
     // at the same time, so that the signals can have their values overwritten
     // by other processes
     #4 vpiCheckValuesForced();
-       svCheckValuesForced();
+    svCheckValuesForced();
     #4 vpiReleaseValues();
     #4 vpiCheckValuesReleased();
-       svCheckValuesReleased();
+    svCheckValuesReleased();
 
     // Force through VPI, release through Verilog
     #4 vpiForceValues();
     #4 vpiCheckValuesForced();
-       svCheckValuesForced();
+    svCheckValuesForced();
     #4 svReleaseValues();
     #4 vpiCheckValuesReleased();
-       svCheckValuesReleased();
+    svCheckValuesReleased();
 
     // Force through Verilog, release through VPI
     #4 svForceValues();
     #4 vpiCheckValuesForced();
-       svCheckValuesForced();
+    svCheckValuesForced();
     #4 vpiReleaseValues();
     #4 vpiCheckValuesReleased();
-       svCheckValuesReleased();
+    svCheckValuesReleased();
 
     // Force only some bits, check if __VforceRd yields correct signal,
     // release through VPI
     #4 svPartiallyForceValues();
     #4 vpiCheckValuesPartiallyForced();
-       svCheckValuesPartiallyForced();
+    svCheckValuesPartiallyForced();
     #4 vpiReleasePartiallyForcedValues();
     #4 vpiCheckValuesReleased();
-       svCheckValuesReleased();
+    svCheckValuesReleased();
 
     // Force only some bits, check if __VforceRd yields correct signal,
     // release through Verilog
     #4 svPartiallyForceValues();
     #4 vpiCheckValuesPartiallyForced();
-       svCheckValuesPartiallyForced();
+    svCheckValuesPartiallyForced();
     #4 svReleaseValues();
     #4 vpiCheckValuesReleased();
-       svCheckValuesReleased();
+    svCheckValuesReleased();
 
 
     #5 $display("*-* All Finished *-*");
@@ -447,7 +450,7 @@ module Test (
 
 `ifdef TEST_VERBOSE
   always @(posedge clk or negedge clk) begin
-    $display("time: %0t\tclk:%b",$time,clk);
+    $display("time: %0t\tclk:%b", $time, clk);
 
     $display("onebit: %x", onebit);
     $display("intval: %x", intval);
