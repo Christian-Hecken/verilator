@@ -482,6 +482,58 @@ extern "C" int tryCheckingForceableString(void) {
     CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
     return 0;
 }
+
+extern "C" int tryForcingUnpackedSignal(void) {
+    const std::string forceableUnpackedSignalName = std::string{scopeName} + ".unpacked";
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceableUnpackedSignalName.c_str()), nullptr);
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {}};
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_put_value(signalHandle, &value_s, nullptr, 0);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    const std::string expectedErrorMessage
+        = "vpi_put_value: Signal " + forceableUnpackedSignalName
+          + " is marked as forceable, but forcing is not supported for unpacked arrays (#4735).";
+    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
+    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
+    return 0;
+}
+
+extern "C" int tryCheckingUnpackedSignal(void) {
+    const std::string forceableUnpackedSignalName = std::string{scopeName} + ".unpacked";
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceableUnpackedSignalName.c_str()), nullptr);
+
+    s_vpi_value value_s{.format = vpiIntVal, .value = {}};
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_get_value(signalHandle, &value_s);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    const std::string expectedErrorMessage
+        = "vl_vpi_get_value: Signal " + forceableUnpackedSignalName
+          + " is marked as forceable, but forcing is not supported for unpacked arrays (#4735).";
+    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
+    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
+    return 0;
+}
 #endif
 
 extern "C" int forceValues(void) {

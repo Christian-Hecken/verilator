@@ -36,6 +36,8 @@ module Test (
 `ifdef VERILATOR
   `systemc_header
     extern "C" int tryCheckingForceableString();
+    extern "C" int tryForcingUnpackedSignal();
+    extern "C" int tryCheckingUnpackedSignal();
     extern "C" int forceValues();
     extern "C" int releaseValues();
     extern "C" int checkValuesForced();
@@ -46,6 +48,8 @@ module Test (
 `else
 `ifdef VERILATOR
   import "DPI-C" context function int tryCheckingForceableString();
+  import "DPI-C" context function int tryForcingUnpackedSignal();
+  import "DPI-C" context function int tryCheckingUnpackedSignal();
 `endif
   import "DPI-C" context function int forceValues();
   import "DPI-C" context function int releaseValues();
@@ -58,27 +62,31 @@ module Test (
 
 
 // TODO: Confirm data types in __Syms
-  // TODO: vpiVectorVal
+
+  // Non-forceable signals that should raise errors
+  string        str1           `PUBLIC_FORCEABLE; // std::string
+  logic         unpacked [1:0] `PUBLIC_FORCEABLE;
 
   // Force with vpiIntVal
-  logic         onebit    `PUBLIC_FORCEABLE; // CData
-  logic [ 31:0] intval    `PUBLIC_FORCEABLE; // IData
-  logic [ 61:0] quad      `PUBLIC_FORCEABLE; // QData
+  logic         onebit         `PUBLIC_FORCEABLE; // CData
+  logic [ 31:0] intval         `PUBLIC_FORCEABLE; // IData
+
+  // Force with vpiVectorVal
+  logic [ 61:0] quad           `PUBLIC_FORCEABLE; // QData
 
   // Force with vpiRealVal
-  real          real1     `PUBLIC_FORCEABLE; // double
+  real          real1          `PUBLIC_FORCEABLE; // double
 
   // Force with vpiStringVal
-  logic [ 15:0] textHalf  `PUBLIC_FORCEABLE; // SData
-  logic [ 63:0] textLong  `PUBLIC_FORCEABLE; // QData
-  logic [511:0] text      `PUBLIC_FORCEABLE; // VlWide
-  string        str1      `PUBLIC_FORCEABLE; // std::string
+  logic [ 15:0] textHalf       `PUBLIC_FORCEABLE; // SData
+  logic [ 63:0] textLong       `PUBLIC_FORCEABLE; // QData
+  logic [511:0] text           `PUBLIC_FORCEABLE; // VlWide
 
   // Force with vpiBinStrVal, vpiOctStrVal, vpiDecStrVal, vpiHexStrVal
-  logic [ 7:0]  binString `PUBLIC_FORCEABLE; // CData
-  logic [ 14:0] octString `PUBLIC_FORCEABLE; // SData // TODO: ?
-  logic [ 63:0] decString `PUBLIC_FORCEABLE; // QData
-  logic [ 63:0] hexString `PUBLIC_FORCEABLE; // QData
+  logic [ 7:0]  binString      `PUBLIC_FORCEABLE; // CData
+  logic [ 14:0] octString      `PUBLIC_FORCEABLE; // SData // TODO: ?
+  logic [ 63:0] decString      `PUBLIC_FORCEABLE; // QData
+  logic [ 63:0] hexString      `PUBLIC_FORCEABLE; // QData
 
   always @(posedge clk) begin
     onebit <= 1;
@@ -139,7 +147,45 @@ module Test (
 
     if (vpiStatus != 0) begin
       $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
-      $display("C Test failed (forcing string either succeeded, but it should have failed, or produced unexpected error message)");
+      $display("C Test failed (forcing string either succeeded even though it should have failed, or produced unexpected error message)");
+      $stop;
+    end
+  endtask
+
+  task automatic vpiTryForcingUnpackedSignal ();
+  integer vpiStatus = 1;
+`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
+    vpiStatus = $c32("tryForcingUnpackedSignal()");
+`else
+    vpiStatus = tryForcingUnpackedSignal();
+`endif
+`else
+    $stop; // This task only makes sense with Verilator, since other simulators support forcing unpacked signals.
+`endif
+
+    if (vpiStatus != 0) begin
+      $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
+      $display("C Test failed (forcing unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
+      $stop;
+    end
+  endtask
+
+  task automatic vpiTryCheckingUnpackedSignal ();
+  integer vpiStatus = 1;
+`ifdef VERILATOR
+`ifdef USE_VPI_NOT_DPI
+    vpiStatus = $c32("tryCheckingUnpackedSignal()");
+`else
+    vpiStatus = tryCheckingUnpackedSignal();
+`endif
+`else
+    $stop; // This task only makes sense with Verilator // TODO: Explain why
+`endif
+
+    if (vpiStatus != 0) begin
+      $write("%%Error: t_vpi_force.cpp:%0d:", vpiStatus);
+      $display("C Test failed (vpi_get_value on forceable unpacked signal either succeeded even though it should have failed, or produced unexpected error message)");
       $stop;
     end
   endtask
@@ -321,6 +367,8 @@ module Test (
 
 `ifdef VERILATOR
     vpiTryCheckingForceableString();
+    vpiTryForcingUnpackedSignal();
+    vpiTryCheckingUnpackedSignal();
 `endif
 
     // Wait a bit before triggering the force to see a change in the traces

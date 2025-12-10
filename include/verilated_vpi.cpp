@@ -2748,7 +2748,15 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
 
     const int varBits = vop->bitSize();
 
-    // TODO: Assert that udims == 0 if forceable
+    // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+    if (VL_UNLIKELY(varp->isForceable() && varp->udims() != 0)) {
+        // TODO: This error should ideally already happen at Verilation time
+        VL_VPI_ERROR_(__FILE__, __LINE__,
+                      "%s: Signal %s is marked as forceable, but forcing is not supported for "
+                      "unpacked arrays (#4735).",
+                      __func__, fullname);
+        return;
+    }
 
     // __VforceRd already has the correct value, but that signal is not public and thus not
     // present in the scope's m_varsp map, so its value has to be recreated using the __VforceEn
@@ -3042,6 +3050,18 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                           baseSignalVop->fullname(), baseSignalVop->scopep()->defname());
             return nullptr;
         }
+
+        // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+        if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
+                        && baseSignalVop->varp()->udims() != 0)) {
+            // TODO: This error should ideally already happen at Verilation time
+            VL_VPI_ERROR_(__FILE__, __LINE__,
+                          "%s: Signal %s is marked as forceable, but forcing is not supported for "
+                          "unpacked arrays (#4735).",
+                          __func__, baseSignalVop->fullname());
+            return nullptr;
+        }
+
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY((forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                         && !baseSignalVop->varp()->isForceable())) {
