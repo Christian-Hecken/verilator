@@ -2623,11 +2623,10 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
 }
 
 void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value valuep) {
-    const VerilatedVar* const varp = baseSignalVop->varp();
-    void* const varDatap = baseSignalVop->varDatap();
+    const VerilatedVar* const baseSignalVarp = baseSignalVop->varp();
     const char* fullname = baseSignalVop->fullname();
 
-    if (!vl_check_format(varp, valuep, fullname, true)) return;
+    if (!vl_check_format(baseSignalVarp, valuep, fullname, true)) return;
     // string data type is dynamic and may vary in size during simulation
     static thread_local std::string t_outDynamicStr;
 
@@ -2655,7 +2654,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value val
     const VerilatedVpioVarBase* const valueVop
         = baseSignalVop->varp()->isForceable() ? forceReadSignalVpioVarp.get() : baseSignalVop;
     const VerilatedVar* const valueVarp
-        = baseSignalVop->varp()->isForceable() ? forceReadSignalp : varp;
+        = baseSignalVop->varp()->isForceable() ? forceReadSignalp : baseSignalVarp;
 
     // We used to presume vpiValue.format = vpiIntVal or if single bit vpiScalarVal
     // This may cause backward compatibility issues with older code.
@@ -2692,7 +2691,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value val
         }
     } else if (valuep->format == vpiBinStrVal) {
         t_outDynamicStr.resize(varBits);
-        const CData* datap = reinterpret_cast<CData*>(varDatap);
+        const CData* datap = reinterpret_cast<CData*>(valueVop->varDatap());
         for (size_t i = 0; i < varBits; ++i) {
             const size_t pos = i + valueVop->bitOffset();
             const char val = (datap[pos >> 3] >> (pos & 7)) & 1;
@@ -2738,14 +2737,14 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value val
         if (valueVarp->vltype() == VLVT_STRING) {
             // TODO: Replace valueVarp with baseSignalVarp here, because strings cannot be forced
             // anyway
-            if (VL_UNLIKELY(varp->isForceable())) {
+            if (VL_UNLIKELY(baseSignalVarp->isForceable())) {
                 VL_VPI_ERROR_(__FILE__, __LINE__,
                               "attempting to retrieve value of forceable signal %s with data type "
                               "VLVT_STRING, but strings cannot be forced.",
                               baseSignalVop->fullname());
             }
             if (valueVarp->isParam()) {
-                valuep->value.str = reinterpret_cast<char*>(varDatap);
+                valuep->value.str = reinterpret_cast<char*>(baseSignalVop->varDatap());
                 return;
             } else {
                 t_outDynamicStr = *(valueVop->varStringDatap());
@@ -2872,16 +2871,6 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                                                              baseSignalVop->scopep())
                   : nullptr;
 
-#if false  // TODO
-        t_vpi_error_info getForceControlSignalsError{};
-        const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
-        // LCOV_EXCL_START - Cannot test, since getForceControlSignals does not (currently) produce
-        // any notices or warnings.
-        if (errorOccurred && getForceControlSignalsError.level < vpiError) {
-            vpi_printf(getForceControlSignalsError.message);
-            VL_VPI_ERROR_RESET_();
-        }  // LCOV_EXCL_STOP
-#endif
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                         && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
@@ -2901,56 +2890,40 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 1);
         }
         if (forceFlag == vpiReleaseFlag) {
-            // Step 1: Deactivate __VforceEn
-            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 0);
+            // If signal is continuously assigned, first clear the force enable bits, then get the
+            // (non-forced) value. Else, get the (still forced) value first, then clear the force
+            // enable bits.
 
-            // Step 2: Set valuep
-            // If assigned continuously, signal will be reset to its base signal's value,
-            // otherwise it will stay at the force value until an event triggers an update
-            if (baseSignalVop->varp()->forceableInfo()->isContinuously()) {
-                vl_vpi_get_value(baseSignalVop, valuep);
+            if (valueVop->varp()->isContinuously())
+                VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 0);
 
-                t_vpi_error_info baseValueGetError{};
-                const bool errorOccurred = vpi_chk_error(&baseValueGetError);
-                // TODO: Maybe exclude from coverage?
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
-                    const std::string baseValueSignalName = baseSignalVop->fullname();
-                    const std::string previousErrorMessage = baseValueGetError.message;
-                    VL_VPI_ERROR_(__FILE__, __LINE__,
-                                  "%s: Could not retrieve value of signal '%s' with "
-                                  "vpiHandle '%p'. Error message: %s",
-                                  __func__, baseValueSignalName.c_str(), object,
-                                  previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && baseValueGetError.level < vpiError)) {
-                    vpi_printf(baseValueGetError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
-            } else {
-                vl_vpi_get_value(forceValueSignalVop.get(), valuep);
+            // TODO: This gets the value of the force *read* signal! However, that one isn't
+            // updated yet, so it'll always return the old value!
+            vl_vpi_get_value(baseSignalVop, valuep);
 
-                t_vpi_error_info forceValueGetError{};
-                const bool errorOccurred = vpi_chk_error(&forceValueGetError);
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level >= vpiError)) {
-                    const std::string forceValueSignalName = forceValueSignalVop->fullname();
-                    std::string previousErrorMessage = forceValueGetError.message;
-                    VL_VPI_ERROR_(__FILE__, __LINE__,
-                                  "%s: Could not retrieve value of force value signal '%s' . "
-                                  "Error message: %s",
-                                  __func__, forceValueSignalName.c_str(),
-                                  previousErrorMessage.c_str());
-                    return nullptr;
-                }
-                // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(errorOccurred && forceValueGetError.level < vpiError)) {
-                    vpi_printf(forceValueGetError.message);
-                    VL_VPI_ERROR_RESET_();
-                }
+            t_vpi_error_info baseValueGetError{};
+            const bool errorOccurred = vpi_chk_error(&baseValueGetError);
+            // LCOV_EXCL_START - Cannot test, because missing signal would already trigger error
+            // earlier, when the forceControlSignals are retrieved.
+            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+            if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
+                const std::string baseValueSignalName = baseSignalVop->fullname();
+                const std::string previousErrorMessage = baseValueGetError.message;
+                VL_VPI_ERROR_(__FILE__, __LINE__,
+                              "%s: Could not retrieve value of signal '%s' with "
+                              "vpiHandle '%p'. Error message: %s",
+                              __func__, baseValueSignalName.c_str(), object,
+                              previousErrorMessage.c_str());
+                return nullptr;
             }
+            // NOLINTNEXTLINE(readability-simplify-boolean-expr);
+            if (VL_UNCOVERABLE(errorOccurred && baseValueGetError.level < vpiError)) {
+                vpi_printf(baseValueGetError.message);
+                VL_VPI_ERROR_RESET_();
+            }  // LCOV_EXCL_STOP
+
+            if (!valueVop->varp()->isContinuously())
+                VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 0);
 
             // TODO: According to the SystemVerilog specification,
             // vpi_put_value should return a handle to the scheduled event

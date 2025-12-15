@@ -3547,27 +3547,44 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
                                    int udims, int pdims...) VL_MT_UNSAFE {
     if (!m_varsp) m_varsp = new VerilatedVarNameMap;
 
-    // Use same flags as base signal, but remove forceable and public flags
-    const VerilatedVarFlags forceReadValueVlflags
-        = static_cast<VerilatedVarFlags>(vlflags & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
-
-    std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
-        new VerilatedVar{std::string{namep} + "__VforceRd", forceReadSignalData, vltype,
-                         forceReadValueVlflags, 0, 0, false});
     // TODO: While the force read signal would be *expected* to have the same vltype and vlflags
     // (except for forceable and public flags) as the base signal, this is not guaranteed. It would
     // be a safer solution to adapt V3EmitCSyms to find the __VforceRd signal and give its vltype
     // and vlflags to this function as arguments.
 
-    std::unique_ptr<ForceableInfo> ForceableInfop = std::make_unique<ForceableInfo>(
+    // Use same flags as base signal, but remove forceable and public flags
+    const VerilatedVarFlags forceReadValueVlflags
+        = static_cast<VerilatedVarFlags>(vlflags & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
+
+    // Cannot use make_unique because constructor of VerilatedVar is protected
+    std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
+        new VerilatedVar{std::string{namep} + "__VforceRd", forceReadSignalData, vltype,
+                         forceReadValueVlflags, udims, pdims, isParam});
+
+    va_list ap;
+    va_start(ap, pdims);
+    for (int i = 0; i < udims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        forceReadSignalp->m_unpacked[i].m_left = msb;
+        forceReadSignalp->m_unpacked[i].m_right = lsb;
+    }
+    for (int i = 0; i < pdims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        forceReadSignalp->m_packed[i].m_left = msb;
+        forceReadSignalp->m_packed[i].m_right = lsb;
+    }
+    va_end(ap);
+
+    std::unique_ptr<ForceableInfo> forceableInfop = std::make_unique<ForceableInfo>(
         forceControlSignals, std::move(forceReadSignalp), isContinuously);
     forceReadSignalp = nullptr;
 
     VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
-                     isParam, std::move(ForceableInfop));
-    ForceableInfop = nullptr;
+                     isParam, std::move(forceableInfop));
+    forceableInfop = nullptr;
 
-    va_list ap;
     va_start(ap, pdims);
     for (int i = 0; i < udims; ++i) {
         const int msb = va_arg(ap, int);
