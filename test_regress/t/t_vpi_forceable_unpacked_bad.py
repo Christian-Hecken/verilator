@@ -11,14 +11,6 @@ import vltest_bootstrap
 
 test.scenarios('simulator')
 
-test.compile(make_top_shell=False,
-             make_main=False,
-             make_pli=True,
-             verilator_flags2=["--main --exe --vpi", test.pli_filename])
-
-test.execute(use_libvpi=True,
-             fails=test.vlt_all,
-             expect_filename=test.golden_filename,
-             check_finished=test.iv)  # or check_finished=test.xrun
+test.compile(fails=test.vlt_all, expect_filename=test.golden_filename)
 
 test.passes()

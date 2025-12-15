@@ -14,11 +14,9 @@ test.scenarios('simulator')
 test.compile(make_top_shell=False,
              make_main=False,
              make_pli=True,
-             verilator_flags2=["--main --exe --vpi", test.pli_filename])
+             verilator_flags2=["--main --exe --vpi --timing", test.pli_filename],
+             v_flags2=["+define+USE_VPI_NOT_DPI +define+VERILATOR_COMMENTS"])
 
-test.execute(use_libvpi=True,
-             fails=test.vlt_all,
-             expect_filename=test.golden_filename,
-             check_finished=test.iv)  # or check_finished=test.xrun
+test.execute(xrun_flags2=["+define+USE_VPI_NOT_DPI"], use_libvpi=True, check_finished=True)
 
 test.passes()

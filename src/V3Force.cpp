@@ -323,6 +323,12 @@ class ForceConvertVisitor final : public VNVisitor {
     void visit(AstVarScope* nodep) override {
         // If this signal is marked externally forceable, create the public force signals
         if (nodep->varp()->isForceable()) {
+            if (VN_IS(nodep->varp()->dtypeSkipRefp(), UnpackArrayDType)) {
+                nodep->varp()->v3error(
+                    "Forcing unpacked arrays is not supported (#4735): " << nodep->varp()->name());
+                return;
+            }
+
             const ForceState::ForceComponentsVarScope& fc = m_state.getForceComponents(nodep);
             fc.m_enVscp->varp()->sigUserRWPublic(true);
             fc.m_valVscp->varp()->sigUserRWPublic(true);

@@ -24,12 +24,12 @@
 ///
 //=========================================================================
 
+#include "verilatedos.h"
 #define VERILATOR_VERILATED_VPI_CPP_
-
-#include "verilated_vpi.h"
 
 #include "verilated.h"
 #include "verilated_imp.h"
+#include "verilated_vpi.h"
 
 #include "vltstd/vpi_user.h"
 
@@ -1076,10 +1076,12 @@ public:
         }
         s().m_inertialPuts.clear();
     }
-    static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bit_value) {
-        assert(bit_value == 0 || bit_value == 1);
-        const uint64_t word = (bit_value == 1) ? -1ULL : 0ULL;
-        constexpr int wordSize = 64;
+    static std::size_t vlTypeSize(VerilatedVarType vltype);
+    static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
+        assert(bitValue == 0 || bitValue == 1);
+        const uint64_t word = (bitValue == 1) ? -1ULL : 0ULL;
+        const std::size_t wordSize = vlTypeSize(vop->varp()->vltype());
+        assert(wordSize > 0);
         const uint32_t varBits = vop->bitSize();
         const std::size_t numChunks = (varBits / wordSize);
         for (std::size_t i{0}; i < numChunks; ++i) {
@@ -1090,8 +1092,6 @@ public:
         if (varBits % wordSize != 0)
             vl_vpi_put_word(vop, word, varBits % wordSize, numChunks * wordSize);
     }
-    static void setAllBits(const VerilatedVpioVar* vop) { setAllBitsToValue(vop, 1); }
-    static void clearAllBits(const VerilatedVpioVar* vop) { setAllBitsToValue(vop, 0); }
 };
 
 //======================================================================
@@ -1246,6 +1246,18 @@ VerilatedVpiError* VerilatedVpiImp::error_info() VL_MT_UNSAFE_ONE {
     return s().m_errorInfop;
 }
 
+std::size_t VerilatedVpiImp::vlTypeSize(const VerilatedVarType vltype) {
+    switch (vltype) {
+    case VLVT_UINT8: return sizeof(CData); break;
+    case VLVT_UINT16: return sizeof(SData); break;
+    case VLVT_UINT32: return sizeof(IData); break;
+    case VLVT_UINT64: return sizeof(QData); break;
+    case VLVT_WDATA: return sizeof(EData); break;
+    default:  // LCOV_EXCL_START
+        VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported vltype (%d)", __func__, vltype);
+        return 0;
+    }  // LCOV_EXCL_STOP
+}
 //======================================================================
 // VerilatedVpiError Methods
 
@@ -2724,6 +2736,14 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* baseSignalVop, p_vpi_value val
         return;
     } else if (valuep->format == vpiStringVal) {
         if (valueVarp->vltype() == VLVT_STRING) {
+            // TODO: Replace valueVarp with baseSignalVarp here, because strings cannot be forced
+            // anyway
+            if (VL_UNLIKELY(varp->isForceable())) {
+                VL_VPI_ERROR_(__FILE__, __LINE__,
+                              "attempting to retrieve value of forceable signal %s with data type "
+                              "VLVT_STRING, but strings cannot be forced.",
+                              baseSignalVop->fullname());
+            }
             if (valueVarp->isParam()) {
                 valuep->value.str = reinterpret_cast<char*>(varDatap);
                 return;
@@ -2805,6 +2825,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                           baseSignalVop->fullname(), baseSignalVop->scopep()->defname());
             return nullptr;
         }
+
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY((forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                         && !baseSignalVop->varp()->isForceable())) {
@@ -2851,6 +2872,16 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                                                              baseSignalVop->scopep())
                   : nullptr;
 
+#if false  // TODO
+        t_vpi_error_info getForceControlSignalsError{};
+        const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
+        // LCOV_EXCL_START - Cannot test, since getForceControlSignals does not (currently) produce
+        // any notices or warnings.
+        if (errorOccurred && getForceControlSignalsError.level < vpiError) {
+            vpi_printf(getForceControlSignalsError.message);
+            VL_VPI_ERROR_RESET_();
+        }  // LCOV_EXCL_STOP
+#endif
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                         && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
@@ -2867,10 +2898,11 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
         if (forceFlag == vpiForceFlag) {
             // Enable __VforceEn
-            VerilatedVpiImp::setAllBits(forceEnableSignalVop.get());
-        } else if (forceFlag == vpiReleaseFlag) {
+            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 1);
+        }
+        if (forceFlag == vpiReleaseFlag) {
             // Step 1: Deactivate __VforceEn
-            VerilatedVpiImp::clearAllBits(forceEnableSignalVop.get());
+            VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 0);
 
             // Step 2: Set valuep
             // If assigned continuously, signal will be reset to its base signal's value,
@@ -2880,6 +2912,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
                 t_vpi_error_info baseValueGetError{};
                 const bool errorOccurred = vpi_chk_error(&baseValueGetError);
+                // TODO: Maybe exclude from coverage?
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
                 if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
                     const std::string baseValueSignalName = baseSignalVop->fullname();
@@ -2919,10 +2952,10 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 }
             }
 
-            return object;  // TODO: According to the SystemVerilog specification,
-                            // vpi_put_value should return a handle to the scheduled event
-                            // if the vpiReturnEvent flag is selected, NULL otherwise. Is
-                            // this even possible with Verilator?
+            // TODO: According to the SystemVerilog specification,
+            // vpi_put_value should return a handle to the scheduled event
+            // if the vpiReturnEvent flag is selected, NULL otherwise.
+            return object;
         }
 
         if (valuep->format == vpiVectorVal) {
@@ -3023,7 +3056,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             return object;
         } else if (valuep->format == vpiStringVal) {
             if (valueVop->varp()->vltype() == VLVT_STRING) {
-                *(valueVop->varStringDatap()) = valuep->value.str;
+                // Does not use valueVop, because strings are not forceable anyway
+                *(baseSignalVop->varStringDatap()) = valuep->value.str;
                 return object;
             } else {
                 const int chars = VL_BYTES_I(varBits);
