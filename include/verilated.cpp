@@ -3563,12 +3563,8 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
 
     va_list ap;
     va_start(ap, pdims);
-    for (int i = 0; i < udims; ++i) {
-        const int msb = va_arg(ap, int);
-        const int lsb = va_arg(ap, int);
-        forceReadSignalp->m_unpacked[i].m_left = msb;
-        forceReadSignalp->m_unpacked[i].m_right = lsb;
-    }
+    assert(udims == 0);  // Forcing unpacked arrays is unsupported (#4735) and should have been
+                         // checked in V3Force already.
     for (int i = 0; i < pdims; ++i) {
         const int msb = va_arg(ap, int);
         const int lsb = va_arg(ap, int);
@@ -3586,12 +3582,8 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
     forceableInfop = nullptr;
 
     va_start(ap, pdims);
-    for (int i = 0; i < udims; ++i) {
-        const int msb = va_arg(ap, int);
-        const int lsb = va_arg(ap, int);
-        var.m_unpacked[i].m_left = msb;
-        var.m_unpacked[i].m_right = lsb;
-    }
+    assert(udims == 0);  // Forcing unpacked arrays is unsupported (#4735) and should have been
+                         // checked in V3Force already.
     for (int i = 0; i < pdims; ++i) {
         const int msb = va_arg(ap, int);
         const int lsb = va_arg(ap, int);
