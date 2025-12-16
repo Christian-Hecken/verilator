@@ -275,7 +275,7 @@ public:
 class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
-    const std::string m_name;  // Name - slowpath
+    const char* const m_namep;  // Name - slowpath
     std::unique_ptr<const ForceableInfo>
         m_forceableInfo;  // Force control signals, Read signal and information about signal
                           // assignment
@@ -284,18 +284,18 @@ protected:
     const bool m_isParam;
     friend class VerilatedScope;
     // CONSTRUCTORS
-    VerilatedVar(std::string name, void* datap, VerilatedVarType vltype, VerilatedVarFlags vlflags,
-                 int udims, int pdims, bool isParam)
+    VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam)
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
-        , m_name{std::move(name)}
+        , m_namep{namep}
         , m_isParam{isParam} {}
-    VerilatedVar(std::string name, void* datap, VerilatedVarType vltype, VerilatedVarFlags vlflags,
-                 int udims, int pdims, bool isParam,
+    VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
                  std::unique_ptr<const ForceableInfo> forceableInfo)
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
-        , m_name{std::move(name)}
+        , m_namep{namep}
         , m_forceableInfo{std::move(forceableInfo)}
         , m_isParam{isParam} {}
 
@@ -304,7 +304,7 @@ public:
     VerilatedVar(VerilatedVar&&) = default;
     // ACCESSORS
     void* datap() const { return m_datap; }
-    const char* name() const { return m_name.c_str(); }
+    const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
     const ForceableInfo* forceableInfo() const { return m_forceableInfo.get(); }
 };

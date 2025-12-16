@@ -3539,12 +3539,11 @@ VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isP
     return &(m_varsp->find(namep)->second);
 }
 
-VerilatedVar*
-VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
-                                   VerilatedVarType vltype, int vlflags, bool isContinuously,
-                                   void* forceReadSignalData,
-                                   std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
-                                   int udims, int pdims...) VL_MT_UNSAFE {
+VerilatedVar* VerilatedScope::forceableVarInsert(
+    const char* namep, void* datap, bool isParam, VerilatedVarType vltype, int vlflags,
+    bool isContinuously, void* forceReadSignalData, const char* const forceReadSignalName,
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals, int udims,
+    int pdims...) VL_MT_UNSAFE {
     if (!m_varsp) m_varsp = new VerilatedVarNameMap;
 
     // TODO: While the force read signal would be *expected* to have the same vltype and vlflags
@@ -3558,8 +3557,8 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
 
     // Cannot use make_unique because constructor of VerilatedVar is protected
     std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
-        new VerilatedVar{std::string{namep} + "__VforceRd", forceReadSignalData, vltype,
-                         forceReadValueVlflags, udims, pdims, isParam});
+        new VerilatedVar{forceReadSignalName, forceReadSignalData, vltype, forceReadValueVlflags,
+                         udims, pdims, isParam});
 
     va_list ap;
     va_start(ap, pdims);

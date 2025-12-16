@@ -275,7 +275,8 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         stmt += ", " + std::string(varp->isContinuously() ? "true" : "false");
         stmt += ", &(";
         stmt += varName + "__VforceRd";
-        stmt += "), {";
+        stmt += "), \"" + V3OutFormatter::quoteNameControls(varName + "__VforceRd") + '"';
+        stmt += ", {";
 
         // Find __VforceEn
         {
