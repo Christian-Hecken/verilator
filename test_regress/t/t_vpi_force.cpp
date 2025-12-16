@@ -404,43 +404,14 @@ extern "C" int checkValuesReleased(void) {
 }
 
 #ifdef VERILATOR
-// This function only makes sense with Verilator, because other simulators fail at elaboration time
-// when trying to force a string. The error message check is specific to verilated_vpi.cpp.
-
-extern "C" int tryCheckingForceableString(void) {
-    const std::string forceableStringName = std::string{scopeName} + ".str1";
-    TestVpiHandle const stringSignalHandle  //NOLINT(misc-misplaced-const)
-        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceableStringName.c_str()), nullptr);
-    CHECK_RESULT_NZ(stringSignalHandle);  // NOLINT(concurrency-mt-unsafe)
-
-    s_vpi_value value_s{.format = vpiStringVal, .value = {}};
-
-    // Prevent program from terminating, so error message can be collected
-    Verilated::fatalOnVpiError(false);
-    vpi_get_value(stringSignalHandle, &value_s);
-    // Re-enable so tests that should pass properly terminate the simulation on failure
-    Verilated::fatalOnVpiError(true);
-
-    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
-    const bool errorOccurred = receivedError.second;
-    const std::string receivedErrorMessage = receivedError.first;
-    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
-
-    const std::string expectedErrorMessage
-        = "attempting to retrieve value of forceable signal " + forceableStringName
-          + " with data type VLVT_STRING, but strings cannot be forced.";
-    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
-    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
-    return 0;
-}
-
 // This function only makes sense with Verilator, because its purpose is testing error messages
 // emitted from verilated_vpi.
 extern "C" int tryInvalidPutOperations() {
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
         "str1", {.format = vpiStringVal, .value = {.str = const_cast<PLI_BYTE8*>("foo")}},
         vpiForceFlag,
-        "vpi_put_value was used with vpiForceFlag on non-forceable signal t.test.str1 : Test"));
+        "vpi_put_value was used with vpiForceFlag on non-forceable signal 't.test.str1' : "
+        "'Test'"));
 
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
         "octString", {.format = vpiOctStrVal, .value = {.str = const_cast<PLI_BYTE8*>("123A")}},

@@ -14,7 +14,7 @@ test.scenarios('simulator')
 test.compile(make_top_shell=False,
              make_main=False,
              make_pli=True,
-             verilator_flags2=["--main --exe --vpi", test.pli_filename])
+             verilator_flags2=["--binary --vpi", test.pli_filename])
 
 test.execute(use_libvpi=True,
              fails=test.vlt_all,
