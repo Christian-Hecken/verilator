@@ -2762,6 +2762,9 @@ void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
             = baseSignalVop->varp()->isForceable() ? std::make_unique<const VerilatedVpioVarBase>(
                                                          forceReadSignalp, baseSignalVop->scopep())
                                                    : nullptr;
+        // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const, and
+        // constructing a new VerilatedVar with a missing m_forceableInfo is not possible in the
+        // testbench either, because VerilatedVar's constructor is protected.
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                         && (!forceReadSignalp || !forceReadSignalVpioVarp))) {
@@ -2770,7 +2773,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
                           "read signal could not be retrieved.",
                           __func__, baseSignalVop->fullname());
             return;
-        }
+        }  // LCOV_EXCL_STOP
 
         const VerilatedVpioVarBase* const valueVop
             = baseSignalVop->varp()->isForceable() ? forceReadSignalVpioVarp.get() : baseSignalVop;
@@ -2864,6 +2867,9 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                                                              baseSignalVop->scopep())
                   : nullptr;
 
+        // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const, and
+        // constructing a new VerilatedVar with a missing m_forceableInfo is not possible in the
+        // testbench either, because VerilatedVar's constructor is protected.
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                         && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
@@ -2873,7 +2879,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                           "control signals could not be retrieved.",
                           __func__, baseSignalVop->fullname(), object);
             return nullptr;
-        }
+        }  // LCOV_EXCL_STOP
 
         const VerilatedVpioVar* const valueVop
             = (forceFlag == vpiForceFlag) ? forceValueSignalVop.get() : baseSignalVop;
@@ -2892,8 +2898,13 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
                 t_vpi_error_info baseValueGetError{};
                 const bool errorOccurred = vpi_chk_error(&baseValueGetError);
-                // LCOV_EXCL_START - Cannot test, because missing signal would already trigger
-                // error earlier, when the forceControlSignals are retrieved.
+                // LCOV_EXCL_START - Cannot test, because there is no way to trigger an error in
+                // vl_vpi_get_value. Using an invalid valuep->format would terminate vpi_put_value
+                // earlier, when vl_check_format is called. Removing force control signals from
+                // m_forceableInfo to cause an error is not possible either, because VerilatedVar's
+                // m_forceableInfo is const, and constructing a new VerilatedVar with a missing
+                // m_forceableInfo is not possible in the testbench either, because VerilatedVar's
+                // constructor is protected.
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
                 if (VL_UNLIKELY(errorOccurred && baseValueGetError.level >= vpiError)) {
                     const std::string baseValueSignalName = baseSignalVop->fullname();
@@ -2925,6 +2936,10 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                           ? std::make_unique<const VerilatedVpioVar>(forceReadSignalp,
                                                                      baseSignalVop->scopep())
                           : nullptr;
+                // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const,
+                // and constructing a new VerilatedVar with a missing m_forceableInfo is not
+                // possible in the testbench either, because VerilatedVar's constructor is
+                // protected.
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
                 if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
                                 && (!forceReadSignalp || !forceReadSignalVop))) {
@@ -2933,12 +2948,19 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                                   "read signal could not be retrieved.",
                                   __func__, baseSignalVop->fullname());
                     return nullptr;
-                }
+                }  // LCOV_EXCL_STOP
 
                 vl_vpi_get_value(forceReadSignalVop.get(), valuep);
 
                 t_vpi_error_info forceReadGetError{};
                 const bool errorOccurred = vpi_chk_error(&forceReadGetError);
+                // LCOV_EXCL_START - Cannot test, because there is no way to trigger an error in
+                // vl_vpi_get_value. Using an invalid valuep->format would terminate vpi_put_value
+                // earlier, when vl_check_format is called. Removing force control signals from
+                // m_forceableInfo to cause an error is not possible either, because VerilatedVar's
+                // m_forceableInfo is const, and constructing a new VerilatedVar with a missing
+                // m_forceableInfo is not possible in the testbench either, because VerilatedVar's
+                // constructor is protected.
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
                 if (VL_UNLIKELY(errorOccurred && forceReadGetError.level >= vpiError)) {
                     const std::string forceReadSignalName = forceReadSignalVop->fullname();
@@ -2954,7 +2976,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 if (VL_UNLIKELY(errorOccurred && forceReadGetError.level < vpiError)) {
                     vpi_printf(forceReadGetError.message);
                     VL_VPI_ERROR_RESET_();
-                }
+                }  // LCOV_EXCL_STOP
             }
 
             // Step 2: Deactivate __VforceEn
