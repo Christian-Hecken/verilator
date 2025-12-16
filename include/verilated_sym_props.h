@@ -249,7 +249,7 @@ public:
 };
 
 //===========================================================================
-// Forceable Verilator variable metadata about force control signals and assignment type
+// Forceable Verilator variable metadata about force control and read signals
 // Thread safety: No idea. Probably not.
 
 class VerilatedVar;
@@ -257,21 +257,15 @@ class ForceableInfo final {
     const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
         nullptr, nullptr};  // __VforceEn and __VforceVal control signals
     const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};  // __VforceRd signal
-    const bool m_isContinuously;  // Whether the signal is continuously assigned. Relevant for
-                                  // releasing forced signal.
-
 public:
     ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
-                  std::unique_ptr<VerilatedVar> forceReadSignalp,
-                  const bool isContinuously) VL_MT_UNSAFE
+                  std::unique_ptr<VerilatedVar> forceReadSignalp) VL_MT_UNSAFE
         : m_forceControlSignals{forceControlSignals},
-          m_forceReadSignalp{std::move(forceReadSignalp)},
-          m_isContinuously{isContinuously} {}
+          m_forceReadSignalp{std::move(forceReadSignalp)} {}
     const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return m_forceReadSignalp.get(); }
     std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
         return m_forceControlSignals;
     }
-    bool isContinuously() const VL_MT_UNSAFE { return m_isContinuously; }
 };
 
 //===========================================================================
@@ -284,7 +278,7 @@ class VerilatedVar final : public VerilatedVarProps {
     const std::string m_name;  // Name - slowpath
     std::unique_ptr<const ForceableInfo>
         m_forceableInfo;  // Force control signals, Read signal and information about signal
-                          // assignment (continuous or not)
+                          // assignment
 
 protected:
     const bool m_isParam;

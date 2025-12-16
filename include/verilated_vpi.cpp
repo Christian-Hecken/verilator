@@ -2887,7 +2887,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             // If assigned continuously, signal will be reset to its base signal's value,
             // otherwise it will stay at the force value until an event triggers an update
 
-            if (baseSignalVop->varp()->forceableInfo()->isContinuously()) {
+            if (baseSignalVop->varp()->isContinuously()) {
                 vl_vpi_get_value(baseSignalVop, valuep);
 
                 t_vpi_error_info baseValueGetError{};

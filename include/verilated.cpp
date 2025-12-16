@@ -3577,8 +3577,8 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
     }
     va_end(ap);
 
-    std::unique_ptr<ForceableInfo> forceableInfop = std::make_unique<ForceableInfo>(
-        forceControlSignals, std::move(forceReadSignalp), isContinuously);
+    std::unique_ptr<ForceableInfo> forceableInfop
+        = std::make_unique<ForceableInfo>(forceControlSignals, std::move(forceReadSignalp));
     forceReadSignalp = nullptr;
 
     VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
