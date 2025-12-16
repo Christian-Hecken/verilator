@@ -411,7 +411,7 @@ class EmitCSyms final : EmitCBaseVisitorConst {
 
     bool forceControlSignalsAreValid(const AstScope* const scopep,
                                      const AstVar* const baseSignalVarp) const {
-        constexpr std::array forceControlSuffixes = {"__VforceEn", "__VforceVal"};
+        constexpr std::array<const char*, 2> forceControlSuffixes = {"__VforceEn", "__VforceVal"};
         return std::all_of(
             forceControlSuffixes.begin(), forceControlSuffixes.end(),
             [scopep, baseSignalVarp, this](const std::string& forceControlSuffix) {
