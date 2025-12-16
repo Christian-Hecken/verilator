@@ -438,9 +438,9 @@ extern "C" int tryCheckingForceableString(void) {
 // emitted from verilated_vpi.
 extern "C" int tryInvalidPutOperations() {
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
-        "str2", {.format = vpiStringVal, .value = {.str = const_cast<PLI_BYTE8*>("foo")}},
+        "str1", {.format = vpiStringVal, .value = {.str = const_cast<PLI_BYTE8*>("foo")}},
         vpiForceFlag,
-        "vpi_put_value was used with vpiForceFlag on non-forceable signal t.test.str2 : Test"));
+        "vpi_put_value was used with vpiForceFlag on non-forceable signal t.test.str1 : Test"));
 
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
         "octString", {.format = vpiOctStrVal, .value = {.str = const_cast<PLI_BYTE8*>("123A")}},
@@ -488,7 +488,7 @@ extern "C" int tryInvalidPutOperations() {
 // This function is just needed for hitting the test coverage target for verilated_vpi.cpp and
 // ensuring that vpi_put_value to a string without vpiForceFlag still works.
 extern "C" int putString() {
-    const std::string stringName = std::string{scopeName} + ".str2";
+    const std::string stringName = std::string{scopeName} + ".str1";
     TestVpiHandle const stringSignalHandle  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(stringName.c_str()), nullptr);
     CHECK_RESULT_NZ(stringSignalHandle);  // NOLINT(concurrency-mt-unsafe)
