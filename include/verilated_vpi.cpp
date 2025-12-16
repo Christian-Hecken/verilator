@@ -2822,7 +2822,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         if (VL_UNLIKELY((forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                         && !baseSignalVop->varp()->isForceable())) {
             VL_VPI_ERROR_(__FILE__, __LINE__,
-                          "vpi_put_value was used with %s on non-forceable signal %s : %s",
+                          "vpi_put_value was used with %s on non-forceable signal '%s' : '%s'",
                           forceFlag == vpiForceFlag ? "vpiForceFlag" : "vpiReleaseFlag",
                           baseSignalVop->fullname(), baseSignalVop->scopep()->defname());
             return nullptr;
