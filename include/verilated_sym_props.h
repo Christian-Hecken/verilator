@@ -28,6 +28,8 @@
 
 #include "verilatedos.h"
 
+#include "verilated.h"
+
 #include <vector>
 
 //===========================================================================
@@ -156,6 +158,8 @@ public:
         return bits;
     }
     bool isPublicRW() const { return ((m_vlflags & VLVF_PUB_RW) != 0); }
+    bool isForceable() const { return ((m_vlflags & VLVF_FORCEABLE) != 0); }
+    bool isContinuously() const { return ((m_vlflags & VLVF_CONTINUOUSLY) != 0); }
     // DPI compatible C standard layout
     bool isDpiCLayout() const { return ((m_vlflags & VLVF_DPI_CLAY) != 0); }
     int udims() const VL_MT_SAFE { return m_unpacked.size(); }
@@ -245,6 +249,26 @@ public:
 };
 
 //===========================================================================
+// Forceable Verilator variable metadata about force control and read signals
+// Thread safety: No idea. Probably not.
+
+class VerilatedVar;
+class ForceableInfo final {
+    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
+        nullptr, nullptr};  // __VforceEn and __VforceVal control signals
+    const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};  // __VforceRd signal
+public:
+    ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
+                  std::unique_ptr<VerilatedVar> forceReadSignalp) VL_MT_UNSAFE
+        : m_forceControlSignals{forceControlSignals},
+          m_forceReadSignalp{std::move(forceReadSignalp)} {}
+    const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return m_forceReadSignalp.get(); }
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
+        return m_forceControlSignals;
+    }
+};
+
+//===========================================================================
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
@@ -252,6 +276,10 @@ class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
+    std::unique_ptr<const ForceableInfo>
+        m_forceableInfo;  // Force control signals, Read signal and information about signal
+                          // assignment
+
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
@@ -262,13 +290,23 @@ protected:
         , m_datap{datap}
         , m_namep{namep}
         , m_isParam{isParam} {}
+    VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
+                 std::unique_ptr<const ForceableInfo> forceableInfo)
+        : VerilatedVarProps{vltype, vlflags, udims, pdims}
+        , m_datap{datap}
+        , m_namep{namep}
+        , m_forceableInfo{std::move(forceableInfo)}
+        , m_isParam{isParam} {}
 
 public:
     ~VerilatedVar() = default;
+    VerilatedVar(VerilatedVar&&) = default;
     // ACCESSORS
     void* datap() const { return m_datap; }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
+    const ForceableInfo* forceableInfo() const { return m_forceableInfo.get(); }
 };
 
 #endif  // Guard
