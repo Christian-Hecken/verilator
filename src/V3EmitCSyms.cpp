@@ -254,20 +254,10 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         const std::string varName = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
                                     + "." + protect(varp->name());
 
-        if (!varp->isParam()) {
-            stmt += ", &(";
-            stmt += varName;
-            stmt += "), false, ";
-        } else if (varp->vlEnumType() == "VLVT_STRING"
-                   && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
-            stmt += ", const_cast<void*>(static_cast<const void*>(";
-            stmt += varName;
-            stmt += ".c_str())), true, ";
-        } else {
-            stmt += ", const_cast<void*>(static_cast<const void*>(&(";
-            stmt += varName;
-            stmt += "))), true, ";
-        }
+        assert(!varp->isParam());  // Forceable params do not make sense
+        stmt += ", &(";
+        stmt += varName;
+        stmt += "), false, ";
 
         stmt += varp->vlEnumType();  // VLVT_UINT32 etc
         stmt += ", ";
