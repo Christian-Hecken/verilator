@@ -206,6 +206,21 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         return {pdim, udim, bounds};
     }
 
+    static std::pair<bool, std::string> isForceControlSignal(const AstVar* const signalVarp) {
+        // __VforceRd should not show up here because it is never public, but just in case it does,
+        // it should be skipped because forceableVarInsert creates its VerilatedVar.
+        for (const std::string forceControlSuffix : {"__VforceEn", "__VforceVal", "__VforceRd"}) {
+            const std::size_t suffixPos = signalVarp->name().find(forceControlSuffix);
+            const bool suffixFound = suffixPos != std::string::npos;
+            const bool suffixIsAtEnd
+                = suffixPos + forceControlSuffix.length() == signalVarp->name().length();
+            if (!(suffixFound && suffixIsAtEnd)) continue;
+            const std::string baseSignalName = signalVarp->name().substr(0, suffixPos);
+            return std::pair<bool, std::string>{true, baseSignalName};
+        }
+        return std::pair<bool, std::string>{false, ""};
+    }
+
     static std::string insertVarStatement(const ScopeVarData& svd, const AstScope* const scopep,
                                           const AstVar* const varp, const int udim, const int pdim,
                                           const std::string& bounds) {
@@ -346,6 +361,8 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         if (baseSignalIt == m_scopeVars.end()) {
             // This means that the signal is forceable, but not public, so only the force control
             // signals show up in the m_scopeVars, but not the base signal itself.
+            // Expect this branch not to be hit, because `baseSignalIsPublic` is checked before
+            // this, so this function will not get called in that case.
             return false;
         } else {
             const AstVar* const baseSignalVarp = baseSignalIt->second.m_varp;
@@ -381,25 +398,6 @@ class EmitCSyms final : EmitCBaseVisitorConst {
             if (!baseSignalVarp->isSigPublic()) return false;
         }
         return true;
-    }
-
-    std::pair<bool, std::string> checkIfForceControlSignal(const AstScope* const scopep,
-                                                           const AstVar* const signalVarp) const {
-        // __VforceRd should not show up here because it is never public, but just in case it does,
-        // it should be skipped because forceableVarInsert creates its VerilatedVar.
-        for (const std::string forceControlSuffix : {"__VforceEn", "__VforceVal", "__VforceRd"}) {
-            const std::size_t suffixPos = signalVarp->name().find(forceControlSuffix);
-            const bool isForceControlSignal
-                = (suffixPos != std::string::npos)
-                  && (suffixPos + forceControlSuffix.length() == signalVarp->name().length());
-            if (!isForceControlSignal) continue;
-            const std::string baseSignalName = signalVarp->name().substr(0, suffixPos);
-            if (isForceControlSignal && baseSignalIsPublic(scopep, baseSignalName)
-                && baseSignalIsValid(scopep, signalVarp, baseSignalName)) {
-                return std::pair<bool, std::string>{true, baseSignalName};
-            }
-        }
-        return std::pair<bool, std::string>{false, ""};
     }
 
     bool forceControlSignalsAreValid(const AstScope* const scopep,
@@ -1035,11 +1033,11 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const int udim = std::get<1>(dimensions);
             const std::string bounds = std::get<2>(dimensions);
 
-            const std::pair<bool, std::string> check_result
-                = checkIfForceControlSignal(scopep, varp);
-            const bool isForceControlSignal = check_result.first;
-            const std::string baseSignalName = check_result.second;
-            if (isForceControlSignal && baseSignalIsValid(scopep, varp, baseSignalName)) {
+            const std::pair<bool, std::string> isForceControlResult = isForceControlSignal(varp);
+            const bool currentSignalIsForceControlSignal = isForceControlResult.first;
+            const std::string baseSignalName = isForceControlResult.second;
+            if (currentSignalIsForceControlSignal && baseSignalIsPublic(scopep, baseSignalName)
+                && baseSignalIsValid(scopep, varp, baseSignalName)) {
                 continue;
             }
 
