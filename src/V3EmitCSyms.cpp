@@ -344,6 +344,8 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         const std::map<const std::string, ScopeVarData>::const_iterator baseSignalIt
             = m_scopeVars.find(baseSignalKey);
         if (baseSignalIt == m_scopeVars.end()) {
+            // This means that the signal is forceable, but not public, so only the force control
+            // signals show up in the m_scopeVars, but not the base signal itself.
             return false;
         } else {
             const AstVar* const baseSignalVarp = baseSignalIt->second.m_varp;
