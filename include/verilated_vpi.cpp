@@ -3020,7 +3020,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             // (non-forced) value. Else, get the (still forced) value first, then clear the force
             // enable bits.
 
-            if (valueVop->varp()->isContinuously())
+            if (baseSignalVop->varp()->isContinuously())
                 VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
             vl_vpi_get_value(baseSignalVop, valuep);
@@ -3046,7 +3046,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 VL_VPI_ERROR_RESET_();
             }  // LCOV_EXCL_STOP
 
-            if (!valueVop->varp()->isContinuously())
+            if (!baseSignalVop->varp()->isContinuously())
                 VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
             return nullptr;
