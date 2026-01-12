@@ -3049,10 +3049,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             if (!valueVop->varp()->isContinuously())
                 VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop, 0);
 
-            // TODO: According to the SystemVerilog specification,
-            // vpi_put_value should return a handle to the scheduled event
-            // if the vpiReturnEvent flag is selected, NULL otherwise.
-            return object;
+            return nullptr;
         }
 
         if (valuep->format == vpiVectorVal) {
