@@ -1078,20 +1078,24 @@ public:
     }
     static auto getForceControlSignals(const VerilatedVpioVarBase* vop);
 
-    // Used in the deleter of vpiHandleGuard_t, which is invoked upon destruction of the return
-    // value of getForceControlSignals.
-    // This means that it is called at the end of vpi_put_value and vpi_get_value whenever the
-    // signal is forceable.
-    // Because it is automatically called at the end, it should not erase any previously issued
-    // errors or warnings.
+    // Used in the deleter of vopGuard_t, which is invoked upon
+    // destruction of the return value of getForceControlSignals.
+    // This means that it is called at the end of vpi_get_value whenever the signal
+    // is forceable and at the end of vpi_put_value whenever the signal is both forceable and
+    // either vpiForceFlag or vpiReleaseFlag is used.
+    // Because it is always automatically called at the end, it should not
+    // erase any previously issued errors or warnings.
     static void releaseWithoutErrorReset(vpiHandle object) {
         VerilatedVpiImp::assertOneCheck();
         VerilatedVpio* const vop = VerilatedVpio::castp(object);
         delete vop;
     }
 
-    using vpiHandleGuard_t = std::unique_ptr<std::remove_pointer_t<vpiHandle>,
-                                             decltype(&VerilatedVpiImp::releaseWithoutErrorReset)>;
+    static void releaseVop(VerilatedVpioVar* vop) {
+        releaseWithoutErrorReset(vop->castVpiHandle());
+    }
+
+    using vopGuard_t = std::unique_ptr<VerilatedVpioVar, decltype(&VerilatedVpiImp::releaseVop)>;
 
     static std::size_t vlTypeSize(VerilatedVarType vltype);
     static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
@@ -1295,7 +1299,9 @@ auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const v
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceEnableSignalName.c_str()), nullptr);
     vpiHandle const forceValueSignalp  // NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(forceValueSignalName.c_str()), nullptr);
-    if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceEnableSignalp))) {
+    VerilatedVpioVar* forceEnableSignalVop = VerilatedVpioVar::castp(forceEnableSignalp);
+    VerilatedVpioVar* forceValueSignalVop = VerilatedVpioVar::castp(forceValueSignalp);
+    if (VL_UNLIKELY(!forceEnableSignalVop)) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
                       "%s: vpi force or release requested for '%s', but vpiHandle '%p' of enable "
                       "signal '%s' could not be cast to VerilatedVpioVar*. Ensure signal is "
@@ -1303,7 +1309,7 @@ auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const v
                       __func__, signalName.c_str(), forceEnableSignalp,
                       forceEnableSignalName.c_str());
     }
-    if (VL_UNLIKELY(!VerilatedVpioVar::castp(forceValueSignalp))) {
+    if (VL_UNLIKELY(!forceValueSignalVop)) {
         VL_VPI_ERROR_(__FILE__, __LINE__,
                       "%s: vpi force or release requested for '%s', but vpiHandle '%p' of value "
                       "signal '%s' could not be cast to VerilatedVpioVar*. Ensure signal is "
@@ -1311,9 +1317,8 @@ auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const v
                       __func__, signalName.c_str(), forceValueSignalp,
                       forceValueSignalName.c_str());
     }
-    return std::pair<vpiHandleGuard_t, vpiHandleGuard_t>{
-        vpiHandleGuard_t{forceEnableSignalp, releaseWithoutErrorReset},
-        vpiHandleGuard_t{forceValueSignalp, releaseWithoutErrorReset}};
+    return std::pair<vopGuard_t, vopGuard_t>{vopGuard_t{forceEnableSignalVop, releaseVop},
+                                             vopGuard_t{forceValueSignalVop, releaseVop}};
 }
 
 std::size_t VerilatedVpiImp::vlTypeSize(const VerilatedVarType vltype) {
@@ -2715,18 +2720,11 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const auto forceControlSignals
         = vop->varp()->isForceable()
               ? VerilatedVpiImp::getForceControlSignals(vop)
-              : std::pair<VerilatedVpiImp::vpiHandleGuard_t, VerilatedVpiImp::vpiHandleGuard_t>{
-                    VerilatedVpiImp::vpiHandleGuard_t{nullptr,
-                                                      VerilatedVpiImp::releaseWithoutErrorReset},
-                    VerilatedVpiImp::vpiHandleGuard_t{nullptr,
-                                                      VerilatedVpiImp::releaseWithoutErrorReset}};
-    const vpiHandle& forceEnableSignalp = forceControlSignals.first.get();
-    const vpiHandle& forceValueSignalp = forceControlSignals.second.get();
-    const VerilatedVpioVarBase* const forceEnableSignalVop
-        = vop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp) : nullptr;
-    const VerilatedVpioVarBase* const forceValueSignalVop
-        = vop->varp()->isForceable() ? VerilatedVpioVar::castp(forceValueSignalp) : nullptr;
-
+              : std::pair<VerilatedVpiImp::vopGuard_t, VerilatedVpiImp::vopGuard_t>{
+                    VerilatedVpiImp::vopGuard_t{nullptr, VerilatedVpiImp::releaseVop},
+                    VerilatedVpiImp::vopGuard_t{nullptr, VerilatedVpiImp::releaseVop}};
+    const VerilatedVpioVarBase* const forceEnableSignalVop = forceControlSignals.first.get();
+    const VerilatedVpioVarBase* const forceValueSignalVop = forceControlSignals.second.get();
     t_vpi_error_info getForceControlSignalsError{};
     const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
     // LCOV_EXCL_START - Cannot test, since getForceControlSignals does not (currently) produce
@@ -2736,10 +2734,9 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         VL_VPI_ERROR_RESET_();
     }  // LCOV_EXCL_STOP
     // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-    if (VL_UNLIKELY((errorOccurred && getForceControlSignalsError.level >= vpiError)
-                    || (vop->varp()->isForceable()
-                        && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
-                            || !forceValueSignalVop)))) {
+    if (VL_UNLIKELY(
+            (errorOccurred && getForceControlSignalsError.level >= vpiError)
+            || (vop->varp()->isForceable() && (!forceEnableSignalVop || !forceValueSignalVop)))) {
 
         // Check if getForceControlSignals provided any additional error info
         t_vpi_error_info getForceControlSignalsError{};
@@ -2978,20 +2975,11 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         const auto forceControlSignals
             = baseSignalVop->varp()->isForceable()
                   ? VerilatedVpiImp::getForceControlSignals(baseSignalVop)
-                  : std::pair<VerilatedVpiImp::vpiHandleGuard_t,
-                              VerilatedVpiImp::vpiHandleGuard_t>{
-                        VerilatedVpiImp::vpiHandleGuard_t{
-                            nullptr, VerilatedVpiImp::releaseWithoutErrorReset},
-                        VerilatedVpiImp::vpiHandleGuard_t{
-                            nullptr, VerilatedVpiImp::releaseWithoutErrorReset}};
-        const vpiHandle& forceEnableSignalp = forceControlSignals.first.get();
-        const vpiHandle& forceValueSignalp = forceControlSignals.second.get();
-        const VerilatedVpioVar* const forceEnableSignalVop
-            = baseSignalVop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp)
-                                                   : nullptr;
-        const VerilatedVpioVar* const forceValueSignalVop
-            = baseSignalVop->varp()->isForceable() ? VerilatedVpioVar::castp(forceValueSignalp)
-                                                   : nullptr;
+                  : std::pair<VerilatedVpiImp::vopGuard_t, VerilatedVpiImp::vopGuard_t>{
+                        VerilatedVpiImp::vopGuard_t{nullptr, VerilatedVpiImp::releaseVop},
+                        VerilatedVpiImp::vopGuard_t{nullptr, VerilatedVpiImp::releaseVop}};
+        const VerilatedVpioVar* const forceEnableSignalVop = forceControlSignals.first.get();
+        const VerilatedVpioVar* const forceValueSignalVop = forceControlSignals.second.get();
         t_vpi_error_info getForceControlSignalsError{};
         const bool errorOccurred = vpi_chk_error(&getForceControlSignalsError);
         // LCOV_EXCL_START - Cannot test, since getForceControlSignals does not (currently) produce
@@ -3002,8 +2990,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         }  // LCOV_EXCL_STOP
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
-                        && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
-                            || !forceValueSignalVop))) {
+                        && (!forceEnableSignalVop || !forceValueSignalVop))) {
 
             // Check if getForceControlSignals provided any additional error info
             t_vpi_error_info getForceControlSignalsError{};
@@ -3021,9 +3008,8 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             return nullptr;
         }
 
-        const VerilatedVpioVar* const valueVop = (forceFlag == vpiForceFlag)
-                                                     ? VerilatedVpioVar::castp(forceValueSignalp)
-                                                     : baseSignalVop;
+        const VerilatedVpioVar* const valueVop
+            = (forceFlag == vpiForceFlag) ? forceValueSignalVop : baseSignalVop;
 
         if (forceFlag == vpiForceFlag) {
             // Enable __VforceEn
