@@ -2974,6 +2974,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
 
         const auto forceControlSignals
             = baseSignalVop->varp()->isForceable()
+                      && (forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                   ? VerilatedVpiImp::getForceControlSignals(baseSignalVop)
                   : std::pair<VerilatedVpiImp::vopGuard_t, VerilatedVpiImp::vopGuard_t>{
                         VerilatedVpiImp::vopGuard_t{nullptr, VerilatedVpiImp::releaseVop},
@@ -2990,6 +2991,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         }  // LCOV_EXCL_STOP
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
+                        && (forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                         && (!forceEnableSignalVop || !forceValueSignalVop))) {
 
             // Check if getForceControlSignals provided any additional error info
