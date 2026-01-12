@@ -1076,7 +1076,22 @@ public:
         }
         s().m_inertialPuts.clear();
     }
-    static std::pair<vpiHandle, vpiHandle> getForceControlSignals(const VerilatedVpioVarBase* vop);
+    static auto getForceControlSignals(const VerilatedVpioVarBase* vop);
+
+    // Used in the deleter of vpiHandleGuard_t, which is invoked upon destruction of the return
+    // value of getForceControlSignals.
+    // This means that it is called at the end of vpi_put_value and vpi_get_value whenever the
+    // signal is forceable.
+    // Because it is automatically called at the end, it should not erase any previously issued
+    // errors or warnings.
+    static void releaseWithoutErrorReset(vpiHandle object) {
+        VerilatedVpiImp::assertOneCheck();
+        VerilatedVpio* const vop = VerilatedVpio::castp(object);
+        delete vop;
+    }
+
+    using vpiHandleGuard_t = std::unique_ptr<std::remove_pointer_t<vpiHandle>,
+                                             decltype(&VerilatedVpiImp::releaseWithoutErrorReset)>;
 
     static std::size_t vlTypeSize(VerilatedVarType vltype);
     static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
@@ -1271,8 +1286,7 @@ VerilatedVpiError* VerilatedVpiImp::error_info() VL_MT_UNSAFE_ONE {
     return s().m_errorInfop;
 }
 
-std::pair<vpiHandle, vpiHandle>
-VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
+auto VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
     const std::string signalName = vop->fullname();
     const std::string forceEnableSignalName = signalName + "__VforceEn";
     const std::string forceValueSignalName = signalName + "__VforceVal";
@@ -1297,8 +1311,9 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVarBase* const vop) {
                       __func__, signalName.c_str(), forceValueSignalp,
                       forceValueSignalName.c_str());
     }
-    return {forceEnableSignalp, forceValueSignalp};
-};
+    return std::pair{vpiHandleGuard_t{forceEnableSignalp, releaseWithoutErrorReset},
+                     vpiHandleGuard_t{forceValueSignalp, releaseWithoutErrorReset}};
+}
 
 std::size_t VerilatedVpiImp::vlTypeSize(const VerilatedVarType vltype) {
     switch (vltype) {
@@ -2696,11 +2711,16 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     // present in the scope's m_varsp map, so its value has to be recreated using the __VforceEn
     // and __VforceVal signals.
     // TODO: Implement a way to retrieve __VforceRd, rather than needing to recreate it.
-    const auto forceControlSignals = vop->varp()->isForceable()
-                                         ? VerilatedVpiImp::getForceControlSignals(vop)
-                                         : std::pair<vpiHandle, vpiHandle>{nullptr, nullptr};
-    const vpiHandle& forceEnableSignalp = forceControlSignals.first;
-    const vpiHandle& forceValueSignalp = forceControlSignals.second;
+    const auto forceControlSignals
+        = vop->varp()->isForceable()
+              ? VerilatedVpiImp::getForceControlSignals(vop)
+              : std::pair<VerilatedVpiImp::vpiHandleGuard_t, VerilatedVpiImp::vpiHandleGuard_t>{
+                    VerilatedVpiImp::vpiHandleGuard_t{nullptr,
+                                                      VerilatedVpiImp::releaseWithoutErrorReset},
+                    VerilatedVpiImp::vpiHandleGuard_t{nullptr,
+                                                      VerilatedVpiImp::releaseWithoutErrorReset}};
+    const vpiHandle& forceEnableSignalp = forceControlSignals.first.get();
+    const vpiHandle& forceValueSignalp = forceControlSignals.second.get();
     const VerilatedVpioVarBase* const forceEnableSignalVop
         = vop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp) : nullptr;
     const VerilatedVpioVarBase* const forceValueSignalVop
@@ -2957,9 +2977,14 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         const auto forceControlSignals
             = baseSignalVop->varp()->isForceable()
                   ? VerilatedVpiImp::getForceControlSignals(baseSignalVop)
-                  : std::pair<vpiHandle, vpiHandle>{nullptr, nullptr};
-        const vpiHandle& forceEnableSignalp = forceControlSignals.first;
-        const vpiHandle& forceValueSignalp = forceControlSignals.second;
+                  : std::pair<VerilatedVpiImp::vpiHandleGuard_t,
+                              VerilatedVpiImp::vpiHandleGuard_t>{
+                        VerilatedVpiImp::vpiHandleGuard_t{
+                            nullptr, VerilatedVpiImp::releaseWithoutErrorReset},
+                        VerilatedVpiImp::vpiHandleGuard_t{
+                            nullptr, VerilatedVpiImp::releaseWithoutErrorReset}};
+        const vpiHandle& forceEnableSignalp = forceControlSignals.first.get();
+        const vpiHandle& forceValueSignalp = forceControlSignals.second.get();
         const VerilatedVpioVar* const forceEnableSignalVop
             = baseSignalVop->varp()->isForceable() ? VerilatedVpioVar::castp(forceEnableSignalp)
                                                    : nullptr;
