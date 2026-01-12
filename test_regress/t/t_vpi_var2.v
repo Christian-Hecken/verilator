@@ -47,6 +47,7 @@ extern "C" int mon_check();
    reg LONGSTART_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_LONGEND;
    // verilator lint_off ASCRANGE
    reg [0:61]   quads[2:3]      /*verilator public_flat_rw @(posedge clk)*/;
+   reg [8:19]   rev   /*verilator public_flat_rw @(posedge clk) */;
 /*verilator public_off*/
    reg             invisible1;
    // verilator lint_on ASCRANGE
@@ -72,6 +73,11 @@ extern "C" int mon_check();
    integer        status;
 
 /*verilator public_flat_rw_on*/
+   integer        integer1;
+   byte           byte1;
+   shortint       short1;
+   int            int1;
+   longint        long1;
    real           real1;
    string         str1;
    localparam int nullptr = 123;
@@ -93,8 +99,15 @@ extern "C" int mon_check();
       text = "Verilog Test module";
       too_big = "some text";
 
+      integer1 = 123;
+      byte1 = 123;
+      short1 = 123;
+      int1 = 123;
+      long1 = 123;
       real1 = 1.0;
       str1 = "hello";
+
+      rev = 12'habc;
 
 `ifdef VERILATOR
       status = $c32("mon_check()");

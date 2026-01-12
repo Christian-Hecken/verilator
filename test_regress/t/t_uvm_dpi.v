@@ -41,6 +41,13 @@ module t;
 
   // To cover testing cases, this has non-zero LSB/LO
   logic [31+8:8] exposed  /*verilator public*/;
+  logic not_exposed;
+  logic exposed_not_forceable;
+
+  logic [83:4] wide_dec  /* verilator public*/;
+  // verilator lint_off ASCRANGE
+  logic [4:83] wide_asc  /* verilator public*/;
+  // verilator lint_on ASCRANGE
 
   uvm_hdl_data_t lval;
 
@@ -83,6 +90,7 @@ module t;
 
     //===== Hier
 `ifdef VERILATOR
+    $c("Verilated::lastContextp()->fatalOnVpiError(false);");
 `ifdef TEST_VERBOSE
     $c("Verilated::scopesDump();");
 `endif
@@ -102,12 +110,6 @@ module t;
     i = uvm_hdl_read("t.exposed", lval);
     `checkh(i, 1);
     `checkh(lval[31:0], exposed);
-
-    lval = '0;
-    $display("= uvm_hdl_read not found (bad)");
-    $display("===\nUVM Report expected on next line:");
-    i = uvm_hdl_deposit("t.__DEPOSIT_NOT_FOUND", lval);
-    `checkh(i, 0);
 
     $display("= uvm_hdl_deposit simple variable");
     lval = 1024'hab;
@@ -141,6 +143,30 @@ module t;
     `checkh(i, 1);
     `checkh(exposed, 32'ha12d);
 
+    $display("= uvm_hdl_read/deposit wide decending");
+    wide_dec = 80'h1234_56789abc_dcba8765;
+    lval = '0;  // Upper bits not cleared by uvm_hdl_read
+    i = uvm_hdl_read("t.wide_dec[79:64]", lval);
+    `checkh(i, 1);
+    `checkh(lval[15:0], wide_dec[79:64]);
+    lval = 1024'hffe;
+    i = uvm_hdl_deposit("t.wide_dec[79:64]", lval);
+    `checkh(i, 1);
+    //                    .vvv_v......._........
+    `checkh(wide_dec, 80'h10ff_e6789abc_dcba8765);
+
+    $display("= uvm_hdl_read/deposit wide ascending");
+    wide_asc = 80'h1234_56789abc_dcba8765;
+    lval = '0;  // Upper bits not cleared by uvm_hdl_read
+    i = uvm_hdl_read("t.wide_asc[64:79]", lval);
+    `checkh(i, 1);
+    `checkh(lval[15:0], wide_asc[64:79]);
+    lval = 1024'hffe;
+    i = uvm_hdl_deposit("t.wide_asc[64:79]", lval);
+    `checkh(i, 1);
+    //                    ...._........_...vvvv.
+    `checkh(wide_asc, 80'h1234_56789abc_dcb0ffe5);
+
     $display("= uvm_hdl_deposit bad ranges");
     $display("===\nUVM Report expected on next line:");
     i = uvm_hdl_deposit("t.exposed[10:3]", lval);
@@ -149,24 +175,46 @@ module t;
     i = uvm_hdl_deposit("t.exposed[99:15]", lval);
     `checkh(i, 0);
 
+    $display("= uvm_hdl_deposit not found (bad)");
+    $display("===\nUVM Report expected on next line:");
+    i = uvm_hdl_deposit("t.__DEPOSIT_NOT_FOUND", 12);
+    `checkh(i, 0);
+
 `ifdef VERILATOR
+    $display("= uvm_hdl_deposit to not exposed (bad)");
+    $display("===\nUVM Report expected on next line:");
+    i = uvm_hdl_deposit("t.not_exposed", 12);
+    `checkh(i, 0);
+`endif
+
+    // Force-release
+    exposed = 32'h11223344;
+    i = uvm_hdl_read("t.exposed", lval);
+    `checkh(i, 1);
+    `checkh(lval[31:0], exposed);
     // UNSUPPORTED: force/release via VPI
     // If support, validate or throw unsupported on force/release part-selects
     $display("= uvm_hdl_force");
-    $display("===\nUVM Report expected on next line:");
     i = uvm_hdl_force("t.exposed", 62);
-    `checkh(i, 0);
+    `checkh(i, 1);
 
     $display("= uvm_hdl_release");
-    $display("===\nUVM Report expected on next line:");
     i = uvm_hdl_release("t.exposed");
-    `checkh(i, 0);
+    `checkh(i, 1);
 
     $display("= uvm_hdl_release_and_read");
-    $display("===\nUVM Report expected on next line:");
     i = uvm_hdl_release_and_read("t.exposed", lval);
+    `checkh(i, 1);
+
+    $display("= uvm_hdl_force to not exposed (bad)");
+    $display("===\nUVM Report expected on next line:");
+    i = uvm_hdl_force("t.not_exposed", 12);
     `checkh(i, 0);
-`endif
+
+    $display("= uvm_hdl_force to not forcable (bad)");
+    $display("===\nUVM Report expected on next line:");
+    i = uvm_hdl_force("t.exposed_not_forceable", 12);
+    `checkh(i, 0);
 
     $write("*-* All Finished *-*\n");
     $finish;
