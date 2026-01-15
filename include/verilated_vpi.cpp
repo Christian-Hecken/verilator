@@ -2753,21 +2753,17 @@ void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
     if (const VerilatedVpioVar* const baseSignalVop = VerilatedVpioVar::castp(object)) {
         // If the signal is forceable, read the value from the __VforceRd signal instead of the
         // base signal
-        const VerilatedVar* forceReadSignalp
+        const std::unique_ptr<const VerilatedVpioVar> forceReadSignalVpioVarp
             = baseSignalVop->varp()->isForceable()
-                  ? baseSignalVop->varp()->forceableInfo()->forceReadSignal()
+                  ? std::make_unique<const VerilatedVpioVar>(
+                        baseSignalVop->varp()->forceableInfo()->forceReadSignal(),
+                        baseSignalVop->scopep())  // Same scope as base signal
                   : nullptr;
-        // Same scope as base signal
-        const std::unique_ptr<const VerilatedVpioVarBase> forceReadSignalVpioVarp
-            = baseSignalVop->varp()->isForceable() ? std::make_unique<const VerilatedVpioVarBase>(
-                                                         forceReadSignalp, baseSignalVop->scopep())
-                                                   : nullptr;
         // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const, and
         // constructing a new VerilatedVar with a missing m_forceableInfo is not possible in the
         // testbench either, because VerilatedVar's constructor is protected.
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-        if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
-                        && (!forceReadSignalp || !forceReadSignalVpioVarp))) {
+        if (VL_UNLIKELY(baseSignalVop->varp()->isForceable() && !forceReadSignalVpioVarp)) {
             VL_VPI_ERROR_(__FILE__, __LINE__,
                           "%s: Signal '%s' is marked forceable, but force "
                           "read signal could not be retrieved.",
@@ -2846,34 +2842,30 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         VerilatedVpiImp::evalNeeded(true);
         const int varBits = baseSignalVop->bitSize();
 
-        const auto forceControlSignals
+        const auto forceControlSignalVops
             = baseSignalVop->varp()->isForceable()
-                  ? baseSignalVop->varp()->forceableInfo()->forceControlSignals()
-                  : std::pair<VerilatedVar*, VerilatedVar*>{nullptr, nullptr};
-        const VerilatedVar* const forceEnableSignalp = forceControlSignals.first;
-        const VerilatedVar* const forceValueSignalp = forceControlSignals.second;
-
-        // Same scope as base signal
-        const std::unique_ptr<const VerilatedVpioVar> forceEnableSignalVop
-            = baseSignalVop->varp()->isForceable()
-                  ? std::make_unique<const VerilatedVpioVar>(forceEnableSignalp,
-                                                             baseSignalVop->scopep())
-                  : nullptr;
-
-        // Same scope as base signal
-        const std::unique_ptr<const VerilatedVpioVar> forceValueSignalVop
-            = baseSignalVop->varp()->isForceable()
-                  ? std::make_unique<const VerilatedVpioVar>(forceValueSignalp,
-                                                             baseSignalVop->scopep())
-                  : nullptr;
+                  ? [&baseSignalVop](const auto& forceControlSignals) {
+                        return std::pair<std::unique_ptr<const VerilatedVpioVar>,
+                                         std::unique_ptr<const VerilatedVpioVar>>{
+                            std::make_unique<const VerilatedVpioVar>(
+                                forceControlSignals.first,
+                                baseSignalVop->scopep()  // Same scope as base signal
+                                ),
+                            std::make_unique<const VerilatedVpioVar>(
+                                forceControlSignals.second,
+                                baseSignalVop->scopep()  // Same scope as base signal
+                                )};
+                    }(baseSignalVop->varp()->forceableInfo()->forceControlSignals())
+                  : std::pair<std::unique_ptr<const VerilatedVpioVar>, std::unique_ptr<const VerilatedVpioVar>>{nullptr, nullptr};
+        const auto& forceEnableSignalVop = forceControlSignalVops.first;
+        const auto& forceValueSignalVop = forceControlSignalVops.second;
 
         // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const, and
         // constructing a new VerilatedVar with a missing m_forceableInfo is not possible in the
         // testbench either, because VerilatedVar's constructor is protected.
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
-                        && (!forceEnableSignalp || !forceEnableSignalVop || !forceValueSignalp
-                            || !forceValueSignalVop))) {
+                        && (!forceEnableSignalVop || !forceValueSignalVop))) {
             VL_VPI_ERROR_(__FILE__, __LINE__,
                           "%s: Signal '%s' with vpiHandle '%p' is marked forceable, but force "
                           "control signals could not be retrieved.",
@@ -2925,24 +2917,18 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 // Get the value of the __VforceRd signal, which holds the forced value. Cannot use
                 // __VforceVal, because that holds the wrong value for partial forcing.
 
-                const VerilatedVar* forceReadSignalp
-                    = baseSignalVop->varp()->isForceable()
-                          ? baseSignalVop->varp()->forceableInfo()->forceReadSignal()
-                          : nullptr;
-
-                // Same scope as base signal
                 const std::unique_ptr<const VerilatedVpioVar> forceReadSignalVop
                     = baseSignalVop->varp()->isForceable()
-                          ? std::make_unique<const VerilatedVpioVar>(forceReadSignalp,
-                                                                     baseSignalVop->scopep())
+                          ? std::make_unique<const VerilatedVpioVar>(
+                                baseSignalVop->varp()->forceableInfo()->forceReadSignal(),
+                                baseSignalVop->scopep())  // Same scope as base signal
                           : nullptr;
                 // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const,
                 // and constructing a new VerilatedVar with a missing m_forceableInfo is not
                 // possible in the testbench either, because VerilatedVar's constructor is
                 // protected.
                 // NOLINTNEXTLINE(readability-simplify-boolean-expr);
-                if (VL_UNLIKELY(baseSignalVop->varp()->isForceable()
-                                && (!forceReadSignalp || !forceReadSignalVop))) {
+                if (VL_UNLIKELY(baseSignalVop->varp()->isForceable() && !forceReadSignalVop)) {
                     VL_VPI_ERROR_(__FILE__, __LINE__,
                                   "%s: Signal '%s' is marked forceable, but force "
                                   "read signal could not be retrieved.",
