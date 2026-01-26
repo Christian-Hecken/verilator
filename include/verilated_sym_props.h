@@ -251,7 +251,10 @@ public:
 
 //===========================================================================
 // Forceable Verilator variable metadata about force control and read signals
-// Thread safety: No idea. Probably not.
+// Thread safety: All members are of type VerilatedVar, so assume same thread safety model as
+// VerilatedVar. Accessor functions allow concurrent access to VerilatedVar pointers, but so does
+// VerilatedScope::varFind, so it is assumed that VerilatedVar is equipped to handle asynchronous
+// accesses.
 
 class VerilatedVar;
 class ForceableInfo final {
