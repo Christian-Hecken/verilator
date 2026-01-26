@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -216,6 +216,8 @@ class WidthVisitor final : public VNVisitor {
     WidthVP* m_vup = nullptr;  // Current node state
     bool m_underFork = false;  // Visiting under a fork
     bool m_underSExpr = false;  // Visiting under a sequence expression
+    bool m_underPackedArray = false;  // Visiting under a AstPackArrayDType
+    bool m_hasNamedType = false;  // Packed array is defined using named type
     AstNode* m_seqUnsupp = nullptr;  // Property has unsupported node
     bool m_hasSExpr = false;  // Property has a sequence expression
     const AstCell* m_cellp = nullptr;  // Current cell for arrayed instantiations
@@ -235,6 +237,8 @@ class WidthVisitor final : public VNVisitor {
     TableMap m_tableMap;  // Created tables so can remove duplicates
     std::map<const AstNodeDType*, AstQueueDType*>
         m_queueDTypeIndexed;  // Queues with given index type
+    std::map<const AstNode*, const AstClass*>
+        m_containingClassp;  // Containing class cache for containingClass() function
     std::unordered_set<AstVar*> m_aliasedVars;  // Variables referenced in alias
 
     static constexpr int ENUM_LOOKUP_BITS = 16;  // Maximum # bits to make enum lookup table
@@ -394,6 +398,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstRToIS* nodep) override { visit_Os32_Lr(nodep); }
     void visit(AstRToIRoundS* nodep) override {
         // Only created here, size comes from upper expression
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
         }
@@ -460,6 +465,7 @@ class WidthVisitor final : public VNVisitor {
         // CALLER: str.compare(), str.icompare()
         // Widths: 32 bit out
         UASSERT_OBJ(nodep->rhsp(), nodep, "For binary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             // See similar handling in visit_cmp_eq_gt where created
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -470,6 +476,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstAtoN* nodep) override {
         // CALLER: str.atobin(), atoi(), atohex(), atooct(), atoreal()
         // Width: 64bit floating point for atoreal(), 32bit out for the others
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             // See similar handling in visit_cmp_eq_gt where created
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -482,6 +489,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit(AstNToI* nodep) override {
         // Created here, should be already sized
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             UASSERT_OBJ(nodep->dtypep(), nodep, "NToI should be sized when created");
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -508,6 +516,7 @@ class WidthVisitor final : public VNVisitor {
         //   Width: max(RHS, THS)
         //   Signed: Output signed iff RHS & THS signed  (presumed, not in IEEE)
         //   Real: Output real if either expression is real, non-real argument gets converted
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             // Just once, do the conditional, expect one bit out.
             iterateCheckBool(nodep, "Conditional Test", nodep->condp(), BOTH);
@@ -688,6 +697,7 @@ class WidthVisitor final : public VNVisitor {
         if (nodep->didWidth()) return;
         // String concatenate.
         // Already did AstConcat simplifications
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
             iterateCheckString(nodep, "RHS", nodep->rhsp(), BOTH);
@@ -734,6 +744,10 @@ class WidthVisitor final : public VNVisitor {
         }
         if (nodep->stmtsp()) nodep->addNextHere(nodep->stmtsp()->unlinkFrBackWithNext());
         VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
+    }
+    void visit(AstFireEvent* nodep) override {
+        assertAtStatement(nodep);
+        iterateCheckSelf(nodep, "LHS", nodep->operandp(), SELF, BOTH);
     }
     void visit(AstFork* nodep) override {
         if (!m_underFork && VN_IS(m_ftaskp, Func) && !nodep->joinType().joinNone()) {
@@ -791,12 +805,14 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstToLowerN* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
             nodep->dtypeSetString();
         }
     }
     void visit(AstToUpperN* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
             nodep->dtypeSetString();
@@ -806,6 +822,7 @@ class WidthVisitor final : public VNVisitor {
         // IEEE-2012 Table 11-21:
         //   LHS, RHS is self-determined
         //   width: value(LHS) * width(RHS)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "RHS", nodep->countp(), SELF, BOTH);
             V3Const::constifyParamsNoWarnEdit(nodep->countp());  // rhsp may change
@@ -892,6 +909,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit(AstReplicateN* nodep) override {
         // Replicate with string
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
             iterateCheckSizedSelf(nodep, "RHS", nodep->rhsp(), SELF, BOTH);
@@ -907,6 +925,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstNodeDistBiop* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             iterateCheckSigned32(nodep, "seed", nodep->lhsp(), BOTH);
             iterateCheckSigned32(nodep, "RHS", nodep->rhsp(), BOTH);
@@ -924,6 +943,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstNodeStream* nodep) override {
         VL_RESTORER(m_streamConcat);
         // UINFOTREE(1, nodep, "stream-in vup" << m_vup, "stream-in ");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             m_streamConcat = true;
             iterateCheckSelf(nodep, "LHS", nodep->lhsp(), SELF, BOTH);
@@ -999,7 +1019,7 @@ class WidthVisitor final : public VNVisitor {
         // LSB is self-determined (IEEE 2012 11.5.1)
         // We also use SELs to shorten a signed constant etc, in this case they are signed.
         if (nodep->didWidth()) return;
-        UASSERT_OBJ(m_vup, nodep, "Select under an unexpected context");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             UINFOTREE(9, nodep, "", "selWidth");
             userIterateAndNext(nodep->fromp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -1127,6 +1147,7 @@ class WidthVisitor final : public VNVisitor {
         // Signed/Real: Output signed iff LHS signed/real; binary operator
         // Note by contrast, bit extract selects are unsigned
         // LSB is self-determined (IEEE 2012 11.5.1)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "Bit select", nodep->bitp(), SELF, BOTH);
             userIterateAndNext(nodep->fromp(), WidthVP{SELF, BOTH}.p());
@@ -1188,6 +1209,7 @@ class WidthVisitor final : public VNVisitor {
 
     void visit(AstAssocSel* nodep) override {
         // Signed/Real: Output type based on array-declared type; binary operator
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             const AstNodeDType* const fromDtp = nodep->fromp()->dtypep()->skipRefp();
             const AstAssocArrayDType* const adtypep = VN_CAST(fromDtp, AssocArrayDType);
@@ -1250,6 +1272,7 @@ class WidthVisitor final : public VNVisitor {
 
     void visit(AstWildcardSel* nodep) override {
         // Signed/Real: Output type based on array-declared type; binary operator
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             const AstNodeDType* const fromDtp = nodep->fromp()->dtypep()->skipRefp();
             const AstWildcardArrayDType* const adtypep = VN_CAST(fromDtp, WildcardArrayDType);
@@ -1271,6 +1294,7 @@ class WidthVisitor final : public VNVisitor {
 
     void visit(AstSliceSel* nodep) override {
         // Always creates as output an unpacked array
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->fromp(), WidthVP{SELF, BOTH}.p());
             //
@@ -1408,6 +1432,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFell* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             userIterate(nodep->sentreep(), nullptr);
@@ -1415,12 +1440,14 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFalling* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             nodep->dtypeSetBit();
         }
     }
     void visit(AstFuture* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             userIterate(nodep->sentreep(), nullptr);
@@ -1428,6 +1455,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstPast* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             nodep->dtypeFrom(nodep->exprp());
@@ -1453,12 +1481,14 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstRising* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             nodep->dtypeSetBit();
         }
     }
     void visit(AstRose* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             userIterate(nodep->sentreep(), nullptr);
@@ -1467,6 +1497,7 @@ class WidthVisitor final : public VNVisitor {
     }
 
     void visit(AstSampled* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             nodep->dtypeFrom(nodep->exprp());
@@ -1523,6 +1554,7 @@ class WidthVisitor final : public VNVisitor {
     }
 
     void visit(AstStable* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             userIterate(nodep->sentreep(), nullptr);
@@ -1530,6 +1562,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstSteady* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->exprp(), SELF, BOTH);
             nodep->dtypeSetBit();
@@ -1543,6 +1576,7 @@ class WidthVisitor final : public VNVisitor {
 
     void visit(AstImplication* nodep) override {
         m_seqUnsupp = nodep;
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckBool(nodep, "LHS", nodep->lhsp(), BOTH);
             iterateCheckBool(nodep, "RHS", nodep->rhsp(), BOTH);
@@ -1551,6 +1585,7 @@ class WidthVisitor final : public VNVisitor {
     }
 
     void visit(AstRand* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             if (nodep->urandom()) {
                 nodep->dtypeSetUInt32();  // Says the spec
@@ -1564,6 +1599,7 @@ class WidthVisitor final : public VNVisitor {
         VL_RESTORER(m_underSExpr);
         m_underSExpr = true;
         m_hasSExpr = true;
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             if (nodep->preExprp()) {
                 iterateCheckBool(nodep, "preExprp", nodep->preExprp(), BOTH);
@@ -1574,6 +1610,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstURandomRange* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             nodep->dtypeSetUInt32();  // Says the spec
             AstNodeDType* const expDTypep = nodep->findUInt32DType();
@@ -1587,6 +1624,7 @@ class WidthVisitor final : public VNVisitor {
         nodep->dtypeSetSigned32();  // Used in int context
         if (VN_IS(nodep->backp(), IsUnbounded)) return;  // Ok, leave
         if (VN_IS(nodep->backp(), BracketArrayDType)) return;  // Ok, leave
+        if (VN_IS(nodep->backp(), InsideRange)) return;  // Ok, leave
         if (const auto* const varp = VN_CAST(nodep->backp(), Var)) {
             if (varp->isParam()) return;  // Ok, leave
         }
@@ -1602,9 +1640,11 @@ class WidthVisitor final : public VNVisitor {
         nodep->v3warn(E_UNSUPPORTED, "Unsupported/illegal unbounded ('$') in this context.");
     }
     void visit(AstInferredDisable* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) nodep->dtypeSetBit();
     }
     void visit(AstIsUnbounded* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, BOTH}.p());
             nodep->dtypeSetBit();
@@ -1630,6 +1670,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstCLog2* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) iterateCheckSizedSelf(nodep, "LHS", nodep->lhsp(), SELF, BOTH);
     }
     void visit(AstCgOptionAssign* nodep) override {
@@ -1642,6 +1683,7 @@ class WidthVisitor final : public VNVisitor {
         // function result depends on both signs
         // RHS is self-determined (IEEE)
         // Real if either side is real (as with AstAdd)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
             userIterateAndNext(nodep->rhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -1701,6 +1743,7 @@ class WidthVisitor final : public VNVisitor {
         userIterateAndNext(nodep->rhsp(), WidthVP{SELF, BOTH}.p());
     }
     void visit(AstCountBits* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->lhsp(), SELF, BOTH);
             iterateCheckSizedSelf(nodep, "RHS", nodep->rhsp(), SELF, BOTH);
@@ -2006,8 +2049,13 @@ class WidthVisitor final : public VNVisitor {
                 VL_DO_DANGLING(pushDeletep(basicp), basicp);
             }
         }
+        if (!m_underPackedArray) m_hasNamedType = false;  // Outermost dimension
+        VL_RESTORER(m_hasNamedType);
+        VL_RESTORER(m_underPackedArray);
+        if (VN_IS(nodep, PackArrayDType)) m_underPackedArray = true;
         // Iterate into subDTypep() to resolve that type and update pointer.
         nodep->refDTypep(iterateEditMoveDTypep(nodep, nodep->subDTypep()));
+
         // Cleanup array size
         userIterateAndNext(nodep->rangep(), WidthVP{SELF, BOTH}.p());
         nodep->dtypep(nodep);  // The array itself, not subDtype
@@ -2018,6 +2066,14 @@ class WidthVisitor final : public VNVisitor {
         } else {
             const int width = nodep->subDTypep()->width() * nodep->rangep()->elementsConst();
             nodep->widthForce(width, width);
+            if (!VL_RESTORER_PREV(m_underPackedArray)) {  // Outermost dimension
+                // IEEE 1800-2023 7.4.1 "Packed arrays" says
+                //   If a packed array is declared as signed,
+                //   then the array viewed as a single vector shall be signed.
+                if (!m_hasNamedType && nodep->basicp()->isSigned()) {
+                    nodep->numeric(VSigning::fromBool(true));
+                }
+            }
         }
         UINFO(4, "dtWidthed " << nodep);
     }
@@ -2139,6 +2195,7 @@ class WidthVisitor final : public VNVisitor {
         UINFO(4, "dtWidthed " << nodep);
     }
     void visit(AstRefDType* nodep) override {
+        m_hasNamedType = m_underPackedArray;
         if (nodep->didWidthAndSet()) return;  // This node is a dtype & not both PRELIMed+FINALed
         nodep->doingWidth(true);
         if (nodep->typeofp()) {  // type(typeofp_expression)
@@ -2423,6 +2480,7 @@ class WidthVisitor final : public VNVisitor {
         // IEEE: Signedness of result is same as self-determined signedness
         // However, the result is same as BITSEL, so we do not sign extend the LHS
         // UINFOTREE(1, nodep, "", "CastSizePre");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             int width = nodep->rhsp()->toSInt();
             if (width < 1) {
@@ -2495,6 +2553,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit(AstDistItem* nodep) override {
         userIterate(nodep->rangep(), m_vup);
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             userIterate(nodep->weightp(), WidthVP{SELF, BOTH}.p());
         }
@@ -2710,6 +2769,12 @@ class WidthVisitor final : public VNVisitor {
             nodep->v3warn(E_CONSTWRITTEN, "Writing to 'const' data-typed variable "
                                               << nodep->prettyNameQ()
                                               << " (IEEE 1800-2023 6.20.6)");
+        }
+        if (nodep->varp()->isClassMember() && !nodep->varp()->isFuncLocal()
+            && !nodep->varp()->lifetime().isStatic() && m_ftaskp && m_ftaskp->isStatic()) {
+            nodep->v3error("Cannot access non-static member variable "
+                           << nodep->prettyNameQ() << " from a static method "
+                           << m_ftaskp->prettyNameQ() << " without object (IEEE 1800-2023 8.10)");
         }
         nodep->didWidth(true);
     }
@@ -2968,6 +3033,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit(AstInitArray* nodep) override {
         // InitArray has type of the array; children are array values
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             AstNodeDType* const vdtypep = m_vup->dtypeNullp();
             if (!nodep->dtypep() || vdtypep) {
@@ -3180,6 +3246,10 @@ class WidthVisitor final : public VNVisitor {
         if (nodep->didWidthAndSet()) return;  // This node is a dtype & not both PRELIMed+FINALed
         nodep->doingWidth(true);
         UINFO(5, "   NODEUORS " << nodep);
+        // Check for tagged unions
+        if (const AstUnionDType* const unionp = VN_CAST(nodep, UnionDType)) {
+            if (unionp->isTagged()) { nodep->v3warn(E_UNSUPPORTED, "Unsupported: tagged union"); }
+        }
         // UINFOTREE(9, nodep, "", "class-in");
         if (!nodep->packed() && v3Global.opt.structsPacked()) nodep->packed(true);
         userIterateChildren(nodep, nullptr);  // First size all members
@@ -3245,6 +3315,10 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstThisRef* nodep) override {
         if (nodep->didWidthAndSet()) return;
         nodep->dtypep(iterateEditMoveDTypep(nodep, nodep->childDTypep()));
+        if (m_ftaskp && m_ftaskp->isStatic()) {
+            nodep->v3error("Cannot use 'this' in a static method "
+                           << m_ftaskp->prettyNameQ() << " (IEEE 1800-2023 8.10-8.11)");
+        }
     }
     void visit(AstClassRefDType* nodep) override {
         if (nodep->didWidthAndSet()) return;
@@ -3330,8 +3404,6 @@ class WidthVisitor final : public VNVisitor {
                     nodep->varp(varp);
                     AstIface* const ifacep = adtypep->ifacep();
                     varp->sensIfacep(ifacep);
-                    nodep->fromp()->foreach(
-                        [ifacep](AstVarRef* const refp) { refp->varp()->sensIfacep(ifacep); });
                     nodep->didWidth(true);
                     return;
                 }
@@ -4797,6 +4869,37 @@ class WidthVisitor final : public VNVisitor {
         }
     }
 
+    void visit(AstTaggedExpr* nodep) override {
+        // Tagged union expressions are currently unsupported
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: tagged union");
+        // Set a placeholder type to allow further processing
+        nodep->dtypeSetBit();
+        userIterateChildren(nodep, m_vup);
+    }
+    void visit(AstTaggedPattern* nodep) override {
+        // Tagged patterns are currently unsupported
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: tagged pattern");
+        nodep->dtypeSetBit();
+        userIterateChildren(nodep, m_vup);
+    }
+    void visit(AstPatternVar* nodep) override {
+        // Pattern variable bindings are currently unsupported
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: pattern variable");
+        nodep->dtypeSetBit();
+    }
+    void visit(AstPatternStar* nodep) override {
+        // Pattern wildcards are currently unsupported
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: pattern wildcard");
+        nodep->dtypeSetBit();
+    }
+    void visit(AstMatches* nodep) override {
+        // Matches operator is currently unsupported
+        nodep->v3warn(E_UNSUPPORTED, "Unsupported: matches operator");
+        // Matches returns a boolean
+        nodep->dtypeSetBit();
+        userIterateChildren(nodep, m_vup);
+    }
+
     void visit(AstPattern* nodep) override {
         if (nodep->didWidthAndSet()) return;
         UINFO(9, "PATTERN " << nodep);
@@ -4811,6 +4914,11 @@ class WidthVisitor final : public VNVisitor {
             nodep->v3warn(E_UNSUPPORTED, "Unsupported/Illegal: Assignment pattern"
                                          " member not underneath a supported construct: "
                                              << nodep->backp()->prettyTypeName());
+
+            if (nodep->backp() && (VN_IS(nodep->backp(), Eq) || VN_IS(nodep->backp(), Neq)))
+                return;
+            nodep->replaceWith(new AstConst{nodep->fileline(), AstConst::BitFalse{}});
+            VL_DO_DANGLING(pushDeletep(nodep), nodep);
             return;
         }
         {
@@ -5359,6 +5467,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstPropSpec* nodep) override {
         VL_RESTORER(m_seqUnsupp);
         VL_RESTORER(m_hasSExpr);
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             iterateCheckBool(nodep, "Property", nodep->propp(), BOTH);
             userIterateAndNext(nodep->sensesp(), nullptr);
@@ -5662,6 +5771,34 @@ class WidthVisitor final : public VNVisitor {
                 }
             }
 
+            // IEEE 1800-2023 7.6: For unpacked arrays to be assignment compatible,
+            // the element types shall be equivalent (IEEE 1800-2023 6.22.2).
+            // Check specifically for 2-state vs 4-state mismatch for unpacked array
+            // to unpacked array assignments, as this is a common IEEE compliance issue.
+            // Note: Streaming operators and string literals have implicit conversion rules.
+            if (nodep->rhsp()->dtypep()) {  // May be null on earlier errors
+                const AstNodeDType* const lhsDtp = lhsDTypep->skipRefp();
+                const AstNodeDType* const rhsDtp = nodep->rhsp()->dtypep()->skipRefp();
+                // Only check unpacked array to unpacked array assignments
+                const bool lhsIsUnpackArray
+                    = VN_IS(lhsDtp, UnpackArrayDType) || VN_IS(lhsDtp, DynArrayDType)
+                      || VN_IS(lhsDtp, QueueDType) || VN_IS(lhsDtp, AssocArrayDType);
+                const bool rhsIsUnpackArray
+                    = VN_IS(rhsDtp, UnpackArrayDType) || VN_IS(rhsDtp, DynArrayDType)
+                      || VN_IS(rhsDtp, QueueDType) || VN_IS(rhsDtp, AssocArrayDType);
+                if (lhsIsUnpackArray && rhsIsUnpackArray) {
+                    if (lhsDtp->isFourstate() != rhsDtp->isFourstate()) {
+                        nodep->v3error(
+                            "Assignment between 2-state and 4-state types requires "
+                            "equivalent element types (IEEE 1800-2023 6.22.2, 7.6)\n"
+                            << nodep->warnMore() << "... LHS type: " << lhsDtp->prettyDTypeNameQ()
+                            << (lhsDtp->isFourstate() ? " (4-state)" : " (2-state)") << "\n"
+                            << nodep->warnMore() << "... RHS type: " << rhsDtp->prettyDTypeNameQ()
+                            << (rhsDtp->isFourstate() ? " (4-state)" : " (2-state)"));
+                    }
+                }
+            }
+
             iterateCheckAssign(nodep, "Assign RHS", nodep->rhsp(), FINAL, lhsDTypep);
             // UINFOTREE(1, nodep, "", "AssignOut");
         }
@@ -5856,7 +5993,7 @@ class WidthVisitor final : public VNVisitor {
                         if (fmt == "%0") {
                             newFormat += "'h%0h";  // IEEE our choice
                         } else {
-                            newFormat += "%d";
+                            newFormat += "%0d";  // UVM tests require %0d
                         }
                     }
                     if (argp) argp = VN_AS(argp->nextp(), NodeExpr);
@@ -5959,6 +6096,7 @@ class WidthVisitor final : public VNVisitor {
         iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
     }
     void visit(AstFError* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
             // Could be string or packed array
@@ -5967,6 +6105,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFEof* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
             nodep->dtypeSetLogicUnsized(32, 1, VSigning::SIGNED);  // Spec says integer return
@@ -5991,12 +6130,14 @@ class WidthVisitor final : public VNVisitor {
         nodep->dtypeSetLogicUnsized(32, 1, VSigning::SIGNED);  // Spec says integer return
     }
     void visit(AstFGetC* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
             nodep->dtypeSetLogicUnsized(32, 8, VSigning::SIGNED);  // Spec says integer return
         }
     }
     void visit(AstFGetS* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             nodep->dtypeSetSigned32();  // Spec says integer return
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
@@ -6004,6 +6145,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFUngetC* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
             iterateCheckSigned32(nodep, "$fungetc character", nodep->charp(), BOTH);
@@ -6011,6 +6153,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFRead* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             nodep->dtypeSetSigned32();  // Spec says integer return
             userIterateAndNext(nodep->memp(), WidthVP{SELF, BOTH}.p());
@@ -6024,6 +6167,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstFScanF* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             nodep->dtypeSetSigned32();  // Spec says integer return
             iterateCheckFileDesc(nodep, nodep->filep(), BOTH);
@@ -6031,6 +6175,7 @@ class WidthVisitor final : public VNVisitor {
         }
     }
     void visit(AstSScanF* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             nodep->dtypeSetSigned32();  // Spec says integer return
             userIterateAndNext(nodep->fromp(), WidthVP{SELF, BOTH}.p());
@@ -6042,6 +6187,7 @@ class WidthVisitor final : public VNVisitor {
         userIterateAndNext(nodep->exprsp(), WidthVP{SELF, BOTH}.p());
     }
     void visit(AstSystemF* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, BOTH}.p());
             nodep->dtypeSetSigned32();  // Spec says integer return
@@ -6084,12 +6230,14 @@ class WidthVisitor final : public VNVisitor {
         userIterateAndNext(nodep->msbp(), WidthVP{SELF, BOTH}.p());
     }
     void visit(AstTestPlusArgs* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->searchp(), BOTH);
             nodep->dtypeChgWidthSigned(32, 1, VSigning::SIGNED);  // Spec says integer return
         }
     }
     void visit(AstValuePlusArgs* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckString(nodep, "LHS", nodep->searchp(), BOTH);
             userIterateAndNext(nodep->outp(), WidthVP{SELF, BOTH}.p());
@@ -6285,6 +6433,7 @@ class WidthVisitor final : public VNVisitor {
         userIterateAndNext(nodep->paramsp(), nullptr);
     }
     void visit(AstGatePin* nodep) override {
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->rangep(), WidthVP{SELF, BOTH}.p());
             userIterateAndNext(nodep->exprp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -6514,10 +6663,26 @@ class WidthVisitor final : public VNVisitor {
         }
         return VN_CAST(pkgItemp->backp(), Package);
     }
+    const AstClass* containingClass(AstNode* nodep) {
+        // abovep is still needed, m_containingClassp is just a cache
+        if (const AstClass* const classp = VN_CAST(nodep, Class))
+            return m_containingClassp[nodep] = classp;
+        if (const AstClassPackage* const packagep = VN_CAST(nodep, ClassPackage)) {
+            return m_containingClassp[nodep] = packagep->classp();
+        }
+        if (m_containingClassp.find(nodep) != m_containingClassp.end()) {
+            return m_containingClassp[nodep];
+        }
+        if (AstNode* const abovep = nodep->aboveLoopp()) {
+            return m_containingClassp[nodep] = containingClass(abovep);
+        } else {
+            return m_containingClassp[nodep] = nullptr;
+        }
+    }
     void visit(AstFuncRef* nodep) override {
         visit(static_cast<AstNodeFTaskRef*>(nodep));
         if (nodep->taskp() && VN_IS(nodep->taskp(), Task)) {
-            UASSERT_OBJ(m_vup, nodep, "Function reference where widthed expression expection");
+            UASSERT_OBJ(m_vup, nodep, "Function reference where widthed expression expectation");
             if (m_vup->prelim() && !VN_IS(nodep->backp(), StmtExpr))
                 nodep->v3error(
                     "Cannot call a task/void-function as a function: " << nodep->prettyNameQ());
@@ -6729,12 +6894,18 @@ class WidthVisitor final : public VNVisitor {
                 // IEEE 1800-2023 (18.12) limits args to current scope variables.
                 // Verilator accepts this for compatibility with other simulators.
                 continue;
-            } else if (VN_IS(exprp, VarRef) || VN_IS(exprp, ArraySel)) {
+            }
+            if (VN_IS(exprp, VarRef) || VN_IS(exprp, ArraySel) || VN_IS(exprp, StructSel)) {
                 // Valid usage
                 continue;
-            } else {
-                argp->v3error("Non-variable arguments for 'std::randomize()'.");
             }
+            if (const AstCMethodHard* const methodp = VN_CAST(exprp, CMethodHard)) {
+                if (methodp->method() == VCMethod::ARRAY_AT
+                    || methodp->method() == VCMethod::ARRAY_AT_WRITE) {
+                    continue;
+                }
+            }
+            argp->v3error("Non-variable arguments for 'std::randomize()'.");
         }
         if (nullp) nullp->v3error("'std::randomize()' does not accept 'null' as arguments.");
     }
@@ -6815,10 +6986,26 @@ class WidthVisitor final : public VNVisitor {
             return;
         }
         if ((nodep->taskp()->classMethod() && !nodep->taskp()->isStatic())
-            && !VN_IS(m_procedurep, InitialAutomatic)
-            && (!m_ftaskp || !m_ftaskp->classMethod() || m_ftaskp->isStatic()) && !m_constraintp) {
-            nodep->v3error("Cannot call non-static member function "
-                           << nodep->prettyNameQ() << " without object (IEEE 1800-2023 8.10)");
+            && !VN_IS(m_procedurep, InitialAutomatic) && !m_constraintp) {
+            bool allow = false;
+            if (m_ftaskp && m_ftaskp->classMethod() && !m_ftaskp->isStatic()) {
+                if (const AstFuncRef* const funcRefp = VN_CAST(nodep, FuncRef)) {
+                    allow = funcRefp->superReference();
+                } else if (const AstTaskRef* const taskRefp = VN_CAST(nodep, TaskRef)) {
+                    allow = taskRefp->superReference();
+                }
+                if (!allow) {
+                    const AstClass* callerClassp = containingClass(m_ftaskp);
+                    if (!callerClassp) callerClassp = containingClass(m_ftaskp->classOrPackagep());
+                    const AstClass* calleeClassp = VN_CAST(nodep->classOrPackagep(), Class);
+                    if (!calleeClassp) calleeClassp = containingClass(nodep->taskp());
+                    allow = AstClass::isClassExtendedFrom(callerClassp, calleeClassp);
+                }
+            }
+            if (!allow) {
+                nodep->v3error("Cannot call non-static member function "
+                               << nodep->prettyNameQ() << " without object (IEEE 1800-2023 8.10)");
+            }
         }
         if (nodep->taskp() && !nodep->scopeNamep()
             && (nodep->taskp()->dpiContext() || nodep->taskp()->dpiExport())) {
@@ -7052,6 +7239,7 @@ class WidthVisitor final : public VNVisitor {
         // CALLER: AstBitsToRealD
         // Real: Output real
         // LHS presumed self-determined, then coerced to real
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             nodep->dtypeSetDouble();
             AstNodeDType* const subDTypep = nodep->findLogicDType(64, 64, VSigning::UNSIGNED);
@@ -7063,6 +7251,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstIToRD* nodep) override {
         // Real: Output real
         // LHS presumed self-determined, then coerced to real
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             nodep->dtypeSetDouble();
             // Self-determined operand (TODO check if numeric type)
@@ -7077,6 +7266,7 @@ class WidthVisitor final : public VNVisitor {
     void visit(AstISToRD* nodep) override {
         // Real: Output real
         // LHS presumed self-determined, then coerced to real
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             nodep->dtypeSetDouble();
             // Self-determined operand (TODO check if numeric type)
@@ -7087,6 +7277,7 @@ class WidthVisitor final : public VNVisitor {
         // CALLER: RToI
         // Real: LHS real
         // LHS presumed self-determined, then coerced to real
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
             nodep->dtypeSetSigned32();
@@ -7096,6 +7287,7 @@ class WidthVisitor final : public VNVisitor {
         // CALLER: RealToBits
         // Real: LHS real
         // LHS presumed self-determined, then coerced to real
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
             nodep->dtypeSetUInt64();
@@ -7114,6 +7306,7 @@ class WidthVisitor final : public VNVisitor {
         //   Width: 1 bit out
         //   Sign: unsigned out (11.8.1)
         UASSERT_OBJ(!nodep->op2p(), nodep, "For unary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckBool(nodep, "LHS", nodep->op1p(), BOTH);
             nodep->dtypeSetBit();
@@ -7132,6 +7325,7 @@ class WidthVisitor final : public VNVisitor {
         // IEEE-2012 Table 11-21:
         //   LHS is self-determined
         //   RHS is self-determined
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckBool(nodep, "LHS", nodep->lhsp(), BOTH);
             iterateCheckBool(nodep, "RHS", nodep->rhsp(), BOTH);
@@ -7145,6 +7339,7 @@ class WidthVisitor final : public VNVisitor {
         //   LHS is self-determined
         //   Width: 1 bit out
         //   Sign: unsigned out (11.8.1)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             iterateCheckSizedSelf(nodep, "LHS", nodep->lhsp(), SELF, BOTH);
             nodep->dtypeSetBit();
@@ -7157,6 +7352,7 @@ class WidthVisitor final : public VNVisitor {
         //   LHS is self-determined
         //   Width: 1 bit out
         //   Sign: unsigned out (11.8.1)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, BOTH}.p());
             nodep->dtypeSetBit();
@@ -7263,6 +7459,7 @@ class WidthVisitor final : public VNVisitor {
         //   TODO: chandle/class handle/iface handle only allowed to self-compare or against null
         //   TODO: chandle/class handle/iface handle no relational compares
         UASSERT_OBJ(nodep->rhsp(), nodep, "For binary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
             userIterateAndNext(nodep->rhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -7345,6 +7542,7 @@ class WidthVisitor final : public VNVisitor {
         // IEEE, 11.4.4: relational compares (<,>,<=,>=,==,===,!=,!==) use
         // "zero padding" on unsigned
         UASSERT_OBJ(nodep->rhsp(), nodep, "For binary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             // See similar handling in visit_cmp_eq_gt where created
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -7358,6 +7556,7 @@ class WidthVisitor final : public VNVisitor {
         // String compare (not output)
         // Real if and only if real_allow set
         UASSERT_OBJ(nodep->rhsp(), nodep, "For binary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             // See similar handling in visit_cmp_eq_gt where created
             iterateCheckString(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -7369,6 +7568,7 @@ class WidthVisitor final : public VNVisitor {
         // CALLER: EqT, LtT
         // Widths: 1 bit out
         // Data type compare (not output)
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, BOTH}.p());
             userIterateAndNext(nodep->rhsp(), WidthVP{SELF, BOTH}.p());
@@ -7400,6 +7600,7 @@ class WidthVisitor final : public VNVisitor {
         // IEEE-2012 Table 11-21:
         //    Widths: out width = lhs width
         UASSERT_OBJ(!nodep->op2p(), nodep, "For unary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
             if (!real_ok) checkCvtUS(nodep->lhsp(), false);
@@ -7441,6 +7642,7 @@ class WidthVisitor final : public VNVisitor {
         //   Sign: Output sign is as specified by operation
         //   TODO: Type: Two-state if input is two-state, else four-state
         UASSERT_OBJ(!nodep->op2p(), nodep, "For unary ops only!");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, PRELIM}.p());
             checkCvtUS(nodep->lhsp(), true);
@@ -7469,6 +7671,7 @@ class WidthVisitor final : public VNVisitor {
         // Shifts
         // See IEEE-2012 11.4.10 and Table 11-21.
         //   RHS is self-determined. RHS is always treated as unsigned, has no effect on result.
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {
             userIterateAndNext(nodep->lhsp(), WidthVP{SELF, PRELIM}.p());
             checkCvtUS(nodep->lhsp(), false);
@@ -7478,6 +7681,7 @@ class WidthVisitor final : public VNVisitor {
     }
     AstNodeBiop* iterate_shift_final(AstNodeBiop* nodep) {
         // Nodep maybe edited
+        assertAtExpr(nodep);
         if (m_vup->final()) {
             AstNodeDType* const expDTypep = m_vup->dtypeOverridep(nodep->dtypep());
             AstNodeDType* const subDTypep = expDTypep;
@@ -7527,6 +7731,7 @@ class WidthVisitor final : public VNVisitor {
         // If errors are off, we need to follow the spec; thus we really need to do the max()
         // because the rhs could be larger, and we need to have proper editing to get the widths
         // to be the same for our operations.
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             // Determine expression widths only relying on what's in the subops
             userIterateAndNext(nodep->lhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -7561,6 +7766,7 @@ class WidthVisitor final : public VNVisitor {
         // to be the same for our operations.
         //
         // UINFOTREE(9, nodep, "rus " << m_vup, "rusin");
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             // Determine expression widths only relying on what's in the subops
             userIterateAndNext(nodep->lhsp(), WidthVP{CONTEXT_DET, PRELIM}.p());
@@ -7617,6 +7823,11 @@ class WidthVisitor final : public VNVisitor {
                 // Warn if user wants extra bit from carry
                 if (subDTypep->widthMin() == (nodep->lhsp()->widthMin() + 1)) lhsWarn = false;
                 if (subDTypep->widthMin() == (nodep->rhsp()->widthMin() + 1)) rhsWarn = false;
+                if (VN_IS(nodep, Add) && nodep->lhsp()->width() == 1
+                    && nodep->rhsp()->width() != 1)
+                    lhsWarn = false;  // do_increment + ...
+                if (nodep->rhsp()->width() == 1 && nodep->lhsp()->width() != 1)
+                    rhsWarn = false;  // ... + do_increment
             } else if (VN_IS(nodep, Mul) || VN_IS(nodep, MulS)) {
                 if (subDTypep->widthMin() >= (nodep->lhsp()->widthMin())) lhsWarn = false;
                 if (subDTypep->widthMin() >= (nodep->rhsp()->widthMin())) rhsWarn = false;
@@ -7632,6 +7843,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit_real_add_sub(AstNodeBiop* nodep) {
         // CALLER: AddD, MulD, ...
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             // Note similar steps in visit_add_sub_replace promotion to double
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -7641,6 +7853,7 @@ class WidthVisitor final : public VNVisitor {
     }
     void visit_real_neg_ceil(AstNodeUniop* nodep) {
         // CALLER: Negate, Ceil, Log, ...
+        assertAtExpr(nodep);
         if (m_vup->prelim()) {  // First stage evaluation
             // See alsl visit_negate_not conversion
             iterateCheckReal(nodep, "LHS", nodep->lhsp(), BOTH);
@@ -8998,6 +9211,12 @@ class WidthVisitor final : public VNVisitor {
     //----------------------------------------------------------------------
     // METHODS - special type detection
 
+    void assertAtExpr(AstNode* nodep) {
+        if (VL_UNCOVERABLE(!m_vup)) {
+            nodep->v3fatalSrc("Unexpected '" << nodep->prettyTypeName() << "' expression under '"
+                                             << nodep->backp()->prettyTypeName() << "'");
+        }
+    }
     void assertAtStatement(AstNode* nodep) {
         if (VL_UNCOVERABLE(m_vup && !m_vup->selfDtm())) {
             UINFO(1, "-: " << m_vup);

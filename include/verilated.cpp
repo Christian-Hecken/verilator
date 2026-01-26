@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you can
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -116,14 +116,43 @@ VerilatedContext* Verilated::s_lastContextp = nullptr;
 thread_local Verilated::ThreadLocal Verilated::t_s;
 
 //===========================================================================
+// Warning print helper
+
+void vl_print_warn_error(const char* prefix, const char* filename, int linenum,
+                         const char* msg) VL_MT_UNSAFE {
+    // A msg of "ERRORCODE: ..." is a code that changes to a prefix, e.g. "%Error-ERRORCODE: ..."
+    // This avoids changing public API of the vl_stop and related functions.
+    const char* msgNoCp = msg;
+    for (; isupper(*msgNoCp); ++msgNoCp);
+    if (msgNoCp[0] == ':' && msgNoCp[1] == ' ') {
+        const int codeWidth = static_cast<int>(msgNoCp - msg);
+        msgNoCp += 2;
+        if (filename && filename[0]) {
+            VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
+                "%s-%.*s: %s:%d: %s\n", prefix, codeWidth, msg, filename, linenum, msgNoCp);
+        } else {
+            VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
+                "%s-%.*s: %s\n", prefix, codeWidth, msg, msgNoCp);
+        }
+    } else {
+        if (filename && filename[0]) {
+            VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
+                "%s: %s:%d: %s\n", prefix, filename, linenum, msg);
+        } else {
+            VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
+                "%s: %s\n", prefix, msg);
+        }
+    }
+}
+
+//===========================================================================
 // User definable functions
 // Note a TODO is a future version of the API will pass a structure so that
 // the calling arguments allow for extension
 
 #ifndef VL_USER_FINISH  ///< Define this to override the vl_finish function
 void vl_finish(const char* filename, int linenum, const char* hier) VL_MT_UNSAFE {
-    // hier is unused in the default implementation.
-    (void)hier;
+    (void)hier;  // hier is unused in the default implementation.
     VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
         "- %s:%d: Verilog $finish\n", filename, linenum);
     Verilated::threadContextp()->gotFinish(true);
@@ -139,12 +168,7 @@ void vl_stop(const char* filename, int linenum, const char* hier) VL_MT_UNSAFE {
     if (Verilated::threadContextp()->fatalOnError()) {
         vl_fatal(filename, linenum, hier, msg);
     } else {
-        if (filename && filename[0]) {
-            // Not VL_PRINTF_MT, already on main thread
-            VL_PRINTF("%%Error: %s:%d: %s\n", filename, linenum, msg);
-        } else {
-            VL_PRINTF("%%Error: %s\n", msg);
-        }
+        vl_print_warn_error("%Error", filename, linenum, msg);
         Verilated::runFlushCallbacks();
     }
 }
@@ -152,16 +176,10 @@ void vl_stop(const char* filename, int linenum, const char* hier) VL_MT_UNSAFE {
 
 #ifndef VL_USER_FATAL  ///< Define this to override the vl_fatal function
 void vl_fatal(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_UNSAFE {
-    // hier is unused in the default implementation.
-    (void)hier;
+    (void)hier;  // hier is unused in the default implementation.
     Verilated::threadContextp()->gotError(true);
     Verilated::threadContextp()->gotFinish(true);
-    if (filename && filename[0]) {
-        // Not VL_PRINTF_MT, already on main thread
-        VL_PRINTF("%%Error: %s:%d: %s\n", filename, linenum, msg);
-    } else {
-        VL_PRINTF("%%Error: %s\n", msg);
-    }
+    vl_print_warn_error("%Error", filename, linenum, msg);
     Verilated::runFlushCallbacks();
 
     VL_PRINTF("Aborting...\n");  // Not VL_PRINTF_MT, already on main thread
@@ -188,9 +206,8 @@ void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool may
         && Verilated::threadContextp()->errorCount() < Verilated::threadContextp()->errorLimit()) {
         // Do just once when cross error limit
         if (Verilated::threadContextp()->errorCount() == 1) {
-            VL_PRINTF(  // Not VL_PRINTF_MT, already on main thread
-                "-Info: %s:%d: %s\n", filename, linenum,
-                "Verilog $stop, ignored due to +verilator+error+limit");
+            vl_print_warn_error("-Info", filename, linenum,
+                                "Verilog $stop, ignored due to +verilator+error+limit");
         }
     } else {
         vl_stop(filename, linenum, hier);
@@ -200,14 +217,8 @@ void vl_stop_maybe(const char* filename, int linenum, const char* hier, bool may
 
 #ifndef VL_USER_WARN  ///< Define this to override the vl_warn function
 void vl_warn(const char* filename, int linenum, const char* hier, const char* msg) VL_MT_UNSAFE {
-    // hier is unused in the default implementation.
-    (void)hier;
-    if (filename && filename[0]) {
-        // Not VL_PRINTF_MT, already on main thread
-        VL_PRINTF("%%Warning: %s:%d: %s\n", filename, linenum, msg);
-    } else {
-        VL_PRINTF("%%Warning: %s\n", msg);
-    }
+    (void)hier;  // hier is unused in the default implementation.
+    vl_print_warn_error("%Warning", filename, linenum, msg);
     Verilated::runFlushCallbacks();
 }
 #endif
@@ -3005,6 +3016,8 @@ void VerilatedContextImp::commandArgVl(const std::string& arg) {
             quiet(true);
         } else if (commandArgVlUint64(arg, "+verilator+rand+reset+", u64, 0, 2)) {
             randReset(static_cast<int>(u64));
+        } else if (commandArgVlUint64(arg, "+verilator+wno+unsatconstr+", u64, 0, 1)) {
+            warnUnsatConstr(u64 == 0);  // wno means disable, so invert
         } else if (commandArgVlUint64(arg, "+verilator+seed+", u64, 1,
                                       std::numeric_limits<int>::max())) {
             randSeed(static_cast<int>(u64));
@@ -3108,7 +3121,7 @@ void VerilatedContext::statsPrintSummary() VL_MT_UNSAFE {
     uint64_t memPeak, memCurrent;
     VlOs::memUsageBytes(memPeak /*ref*/, memCurrent /*ref*/);
     const double modelMB = memPeak / 1024.0 / 1024.0;
-    VL_PRINTF("- Verilator: cpu %0.3f s on %u threads; alloced %0.0f MB\n", cputime,
+    VL_PRINTF("- Verilator: cpu %0.3f s on %u threads; allocated %0.0f MB\n", cputime,
               threadsInModels(), modelMB);
 }
 

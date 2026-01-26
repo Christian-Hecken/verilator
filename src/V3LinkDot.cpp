@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -47,7 +47,7 @@
 //      ResolveVisitor:
 //          #9: Resolve general variables, which may point into the interface or modport (after #8)
 //      LinkResolve:
-//          #10: Unlink modports, not needed later except for XML/Lint
+//          #10: Unlink modports, not needed later except for JSON/Lint
 //*************************************************************************
 // TOP
 //      {name-of-top-modulename}
@@ -758,9 +758,9 @@ public:
                             if ((cellp && cellp->modp()->origName() == ident)
                                 || (inlinep && inlinep->origModName() == ident)) {
                                 break;
-                            } else if (VSymEnt* const findSymp
+                            } else if (VSymEnt* const findSym2p
                                        = findWithAltFallback(lookupSymp, ident, altIdent)) {
-                                lookupSymp = findSymp;
+                                lookupSymp = findSym2p;
                                 if (crossedCell && VN_IS(lookupSymp->nodep(), Var)) {
                                     UINFO(9, "    Not found but matches var name in parent "
                                                  << lookupSymp);
@@ -1076,8 +1076,8 @@ class LinkDotFindVisitor final : public VNVisitor {
     void visit(AstTypeTable*) override {}  // FindVisitor::
     void visit(AstConstPool*) override {}  // FindVisitor::
     void visit(AstIfaceRefDType* nodep) override {  // FindVisitor::
-        if (m_statep->forPrimary() && nodep->isVirtual() && nodep->ifacep()
-            && !nodep->ifacep()->user3()) {
+        if ((m_statep->forPrimary() || m_statep->forParamed()) && nodep->isVirtual()
+            && nodep->ifacep() && !nodep->ifacep()->user3()) {
             m_virtIfaces.push_back(nodep->ifacep());
             nodep->ifacep()->user3(true);
         }
@@ -1871,9 +1871,11 @@ class LinkDotFindVisitor final : public VNVisitor {
                 nextp = argp->nextp();
                 AstVar* argrefp = nullptr;
                 if (AstParseRef* const parserefp = VN_CAST(argp, ParseRef)) {
-                    // We use an int type, this might get changed in V3Width when types resolve
+                    // IEEE 1800-2023 12.7.3: foreach loop variable type shall be int (2-state)
+                    // This might get changed in V3Width when types resolve (e.g., for assoc
+                    // arrays)
                     argrefp = new AstVar{parserefp->fileline(), VVarType::BLOCKTEMP,
-                                         parserefp->name(), argp->findSigned32DType()};
+                                         parserefp->name(), argp->findIntDType()};
                     argrefp->lifetime(VLifetime::AUTOMATIC_EXPLICIT);
                     parserefp->replaceWith(argrefp);
                     VL_DO_DANGLING2(parserefp->deleteTree(), parserefp, argp);
@@ -2205,7 +2207,7 @@ class LinkDotParamVisitor final : public VNVisitor {
             symp->exported(false);
             refp->pinNum(nodep->pinNum());
             // Put the variable where the port is, so that variables stay
-            // in pin number sorted order. Otherwise hierarchical or XML
+            // in pin number sorted order. Otherwise hierarchical or JSON
             // may botch by-position instances.
             nodep->addHereThisAsNext(refp->unlinkFrBack());
         }
@@ -2529,7 +2531,13 @@ class LinkDotIfaceVisitor final : public VNVisitor {
     void visit(AstModportVarRef* nodep) override {  // IfaceVisitor::
         UINFO(5, "   fiv: " << nodep);
         iterateChildren(nodep);
-        VSymEnt* const symp = m_curSymp->findIdFallback(nodep->name());
+        VSymEnt* symp = nullptr;
+        if (nodep->exprp()) {
+            nodep->v3warn(E_UNSUPPORTED,
+                          "Unsupported: Modport expressions (IEEE 1800-2023 25.5.4)");
+        } else {
+            symp = m_curSymp->findIdFallback(nodep->name());
+        }
         if (!symp) {
             nodep->v3error("Modport item not found: " << nodep->prettyNameQ());
         } else if (AstVar* const varp = VN_CAST(symp->nodep(), Var)) {
@@ -3275,7 +3283,7 @@ class LinkDotResolveVisitor final : public VNVisitor {
         // Cell: Recurse inside or cleanup not founds
         LINKDOT_VISIT_START();
         UINFO(5, indent() << "visit " << nodep);
-        checkNoDot(nodep);
+        // Can be under dot if called as package::class and that class resolves, so no checkNoDot
         VL_RESTORER(m_usedPins);
         m_usedPins.clear();
         UASSERT_OBJ(nodep->classp(), nodep, "ClassRef has unlinked class");
@@ -3307,15 +3315,23 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
                     return;
                 } else {
-                    const string suggest
+                    const std::string suggest
                         = (nodep->param() ? m_statep->suggestSymFlat(m_pinSymp, nodep->name(),
                                                                      LinkNodeMatcherVarParam{})
                                           : m_statep->suggestSymFlat(m_pinSymp, nodep->name(),
                                                                      LinkNodeMatcherVarIO{}));
+                    const std::string decl
+                        = ((m_cellp && m_cellp->modp())
+                               ? "\n"s + nodep->warnMore() + "... Location of instance's "
+                                     + m_cellp->modp()->verilogKwd() + " declaration\n"
+                                     + m_cellp->modp()->warnContextSecondary()
+                               : "");
                     nodep->v3warn(PINNOTFOUND,
                                   ucfirst(whatp)
                                       << " not found: " << nodep->prettyNameQ() << '\n'
-                                      << (suggest.empty() ? "" : nodep->warnMore() + suggest));
+                                      << (suggest.empty() ? "" : nodep->warnMore() + suggest)
+                                      << '\n'
+                                      << nodep->warnContextPrimary() << decl);
                     return;
                 }
             }
@@ -4977,7 +4993,10 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     cprp = dotp->rhsp();
                     VSymEnt* const foundp = m_statep->resolveClassOrPackage(
                         lookSymp, lookNodep, true, false, nodep->verilogKwd());
-                    if (!foundp) return;
+                    if (!foundp) {
+                        VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
+                        return;
+                    }
                     UASSERT_OBJ(lookNodep->classOrPackageSkipp(), nodep, "Bad package link");
                     lookSymp = m_statep->getNodeSym(lookNodep->classOrPackageSkipp());
                 } else {
@@ -4989,34 +5008,33 @@ class LinkDotResolveVisitor final : public VNVisitor {
             if (VL_UNCOVERABLE(!cpackagerefp)) {
                 // Linking the extend gives an error before this is hit
                 nodep->v3error("Attempting to extend using non-class");  // LCOV_EXCL_LINE
+                VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
                 return;
             }
             VSymEnt* const foundp = m_statep->resolveClassOrPackage(lookSymp, cpackagerefp, true,
                                                                     true, nodep->verilogKwd());
-            if (foundp) {
-                if (AstClass* const classp = VN_CAST(foundp->nodep(), Class)) {
-                    AstPin* paramsp = cpackagerefp->paramsp();
-                    if (paramsp) {
-                        paramsp = paramsp->cloneTree(true);
-                        nodep->parameterized(true);
-                    }
-                    nodep->childDTypep(new AstClassRefDType{nodep->fileline(), classp, paramsp});
-                    // Link pins
-                    iterate(nodep->childDTypep());
-                } else if (AstParamTypeDType* const paramp
-                           = VN_CAST(foundp->nodep(), ParamTypeDType)) {
-                    AstRefDType* const refParamp
-                        = new AstRefDType{nodep->fileline(), paramp->name()};
-                    refParamp->refDTypep(paramp);
-                    nodep->childDTypep(refParamp);
+            if (!foundp) {
+                VL_DO_DANGLING(pushDeletep(nodep->unlinkFrBack()), nodep);
+                return;
+            }
+            if (AstClass* const classp = VN_CAST(foundp->nodep(), Class)) {
+                AstPin* paramsp = cpackagerefp->paramsp();
+                if (paramsp) {
+                    paramsp = paramsp->cloneTree(true);
                     nodep->parameterized(true);
-                } else {
-                    nodep->v3warn(E_UNSUPPORTED,
-                                  "Unsupported: " << foundp->nodep()->prettyTypeName()
-                                                  << " in 'class extends'");
-                    return;
                 }
+                nodep->childDTypep(new AstClassRefDType{nodep->fileline(), classp, paramsp});
+                // Link pins
+                iterate(nodep->childDTypep());
+            } else if (AstParamTypeDType* const paramp
+                       = VN_CAST(foundp->nodep(), ParamTypeDType)) {
+                AstRefDType* const refParamp = new AstRefDType{nodep->fileline(), paramp->name()};
+                refParamp->refDTypep(paramp);
+                nodep->childDTypep(refParamp);
+                nodep->parameterized(true);
             } else {
+                nodep->v3warn(E_UNSUPPORTED, "Unsupported: " << foundp->nodep()->prettyTypeName()
+                                                             << " in 'class extends'");
                 return;
             }
             if (!nodep->childDTypep()) nodep->v3error("Attempting to extend using non-class");
@@ -5345,6 +5363,20 @@ class LinkDotResolveVisitor final : public VNVisitor {
                     nodep->typedefp(defp);
                     nodep->classOrPackagep(foundp->classOrPackagep());
                     resolvedCapturedTypedef = true;
+
+                    // class capture: capture typedef references inside parameterized classes
+                    // Only capture if we're referencing from OUTSIDE the class (not
+                    // self-references)
+                    if (m_statep->forPrimary()) {
+                        AstClass* const classp = VN_CAST(nodep->classOrPackagep(), Class);
+                        if (classp && classp->hasGParam() && classp != m_modp) {
+                            UINFO(9, indent()
+                                         << "class capture add typedef name=" << nodep->name()
+                                         << " class=" << classp->name() << " typedef=" << defp);
+                            V3LinkDotIfaceCapture::addClass(nodep, classp, m_modp, defp);
+                        }
+                    }
+
                 } else if (AstParamTypeDType* const defp
                            = foundp ? VN_CAST(foundp->nodep(), ParamTypeDType) : nullptr) {
                     if (defp == nodep->backp()) {  // Where backp is typically typedef

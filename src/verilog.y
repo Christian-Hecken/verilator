@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -136,6 +136,7 @@ const VBasicDTypeKwd LOGIC_IMPLICIT = VBasicDTypeKwd::LOGIC_IMPLICIT;
 
 #define DEL(...) \
     { \
+        /* cppcheck-suppress constVariable */ \
         AstNode* const nodeps[] = {__VA_ARGS__}; \
         for (AstNode* const nodep : nodeps) \
             if (nodep) nodep->deleteTree(); \
@@ -539,6 +540,8 @@ BISONPRE_VERSION(3.7,%define api.header.include {"V3ParseBison.h"})
 %token<fl>              yS_UNTIL_WITH   "s_until_with"
 %token<fl>              yTABLE          "table"
 %token<fl>              yTAGGED         "tagged"
+%token<fl>              yTAGGED__LEX    "tagged-in-lex"
+%token<fl>              yTAGGED__NONPRIMARY   "tagged-nonprimary"
 %token<fl>              yTASK           "task"
 %token<fl>              yTHIS           "this"
 %token<fl>              yTHROUGHOUT     "throughout"
@@ -1209,7 +1212,8 @@ module_declaration:             // ==IEEE: module_declaration
                           GRAMMARP->endLabel($<fl>6, $1, $6); }
         //
         |       yEXTERN modFront parameter_port_listE portsStarE ';'
-                        { BBUNSUP($<fl>1, "Unsupported: extern module"); }
+                        { DEL($2->unlinkFrBack()); }
+                        // We allow modules to be declared after instantiations, so harmless
         ;
 
 modFront<nodeModulep>:
@@ -1505,7 +1509,8 @@ interface_declaration:          // IEEE: interface_declaration + interface_nonan
                           if ($5) $1->addStmtsp($5);
                           $1->hasParameterList($<flag>2); }
         |       yEXTERN intFront parameter_port_listE portsStarE ';'
-                        { BBUNSUP($<fl>1, "Unsupported: extern interface"); }
+                        { DEL($2->unlinkFrBack()); }
+                        // We allow interfaces to be declared after instantiations, so harmless
         ;
 
 intFront<nodeModulep>:
@@ -1595,7 +1600,8 @@ program_declaration:            // IEEE: program_declaration + program_nonansi_h
                           if ($5) $1->addStmtsp($5);
                           GRAMMARP->endLabel($<fl>7, $1, $7); }
         |       yEXTERN pgmFront parameter_port_listE portsStarE ';'
-                        { BBUNSUP($<fl>1, "Unsupported: extern program"); }
+                        { DEL($2->unlinkFrBack()); }
+                        // We allow programs to be declared after instantiations, so harmless
         ;
 
 pgmFront<nodeModulep>:
@@ -1679,8 +1685,7 @@ modportPortsDeclList<nodep>:
 // We track the type as with the V2k series of defines, then create as each ID is seen.
 modportPortsDecl<nodep>:
         //                      // IEEE: modport_simple_ports_declaration
-                port_direction modportSimplePortOrTFPort { $$ = new AstModportVarRef{$<fl>2, *$2, GRAMMARP->m_varIO};
-                                                           GRAMMARP->m_modportImpExpActive = false;}
+                port_direction { GRAMMARP->m_modportImpExpActive = false; } modportSimplePortOrTFPort { $$ = $3; }
         //                      // IEEE: modport_clocking_declaration
         |       yCLOCKING idAny/*clocking_identifier*/ { $$ = new AstModportClockingRef{$1, *$2}; }
         //                      // IEEE: yIMPORT modport_tf_port
@@ -1700,19 +1705,20 @@ modportPortsDecl<nodep>:
                         { $$ = nullptr; BBUNSUP($<fl>1, "Unsupported: Modport export with prototype"); DEL($2); }
         // Continuations of above after a comma.
         //                      // IEEE: modport_simple_ports_declaration
-        |       modportSimplePortOrTFPort                { $$ = GRAMMARP->m_modportImpExpActive ?
+        |       modportSimplePortOrTFPort                { $$ = $1; }
+        ;
+
+modportSimplePortOrTFPort<nodep>:// IEEE: modport_simple_port or modport_tf_port, depending what keyword was earlier
+                idAny                                   { $$ = GRAMMARP->m_modportImpExpActive ?
                                                                 static_cast<AstNode*>(
                                                                   new AstModportFTaskRef{
                                                                     $<fl>1, *$1, GRAMMARP->m_modportImpExpLastIsExport} ) :
                                                                 static_cast<AstNode*>(
                                                                   new AstModportVarRef{
                                                                     $<fl>1, *$1, GRAMMARP->m_varIO} ); }
-        ;
-
-modportSimplePortOrTFPort<strp>:// IEEE: modport_simple_port or modport_tf_port, depending what keyword was earlier
-                idAny                                   { $$ = $1; }
-        |       '.' idAny '(' ')'                       { $$ = $2; BBUNSUP($<fl>1, "Unsupported: Modport dotted port name"); }
-        |       '.' idAny '(' expr ')'                  { $$ = $2; BBUNSUP($<fl>1, "Unsupported: Modport dotted port name"); }
+        |       '.' idAny '(' ')'                       { $$ = new AstModportVarRef{$<fl>2, *$2, GRAMMARP->m_varIO};
+                                                          BBUNSUP($<fl>4, "Unsupported: Modport empty expression"); }
+        |       '.' idAny '(' expr ')'                  { $$ = new AstModportVarRef{$<fl>2, *$2, $4, GRAMMARP->m_varIO}; }
         ;
 
 //************************************************
@@ -2103,8 +2109,7 @@ data_typeVirtual<nodeDTypep>:           // ==IEEE: data_type after yVIRTUAL [ yI
 data_type_or_void<nodeDTypep>:  // ==IEEE: data_type_or_void
                 data_typeAny                            { $$ = $1; }
         |       yVOID
-                        { $$ = new AstBasicDType{$1, LOGIC_IMPLICIT};
-                          BBUNSUP($1, "Unsupported: void (for tagged unions)"); }
+                        { $$ = new AstBasicDType{$1, VBasicDTypeKwd::CVOID}; }
         ;
 
 var_data_type<nodeDTypep>:              // ==IEEE: var_data_type
@@ -2135,7 +2140,7 @@ struct_unionDecl<nodeUOrStructDTypep>:  // IEEE: part of data_type
         /*cont*/    struct_union_memberListEnd
                         { $$ = $<nodeUOrStructDTypep>4; $$->addMembersp($5); }
         |       yUNION taggedSoftE packedSigningE '{'
-        /*mid*/         { $<nodeUOrStructDTypep>$ = new AstUnionDType{$1, $2, $3}; }
+        /*mid*/         { $<nodeUOrStructDTypep>$ = new AstUnionDType{$1, $2 == tagged_SOFT, $2 == tagged_TAGGED, $3}; }
         /*cont*/    struct_union_memberListEnd
                         { $$ = $<nodeUOrStructDTypep>5; $$->addMembersp($6); }
         ;
@@ -2273,10 +2278,10 @@ random_qualifier<qualifiers>:   // ==IEEE: random_qualifier
         |       yRANDC                                  { $$ = VMemberQualifiers::none(); $$.m_randc = true; }
         ;
 
-taggedSoftE<cbool>:
-                /*empty*/                               { $$ = false; }
-        |       ySOFT                                   { $$ = true; }
-        |       yTAGGED                                 { $$ = false; BBUNSUP($<fl>1, "Unsupported: tagged union"); }
+taggedSoftE<taggedstate>:
+                /*empty*/                               { $$ = tagged_NONE; }
+        |       ySOFT                                   { $$ = tagged_SOFT; }
+        |       yTAGGED                                 { $$ = tagged_TAGGED; }
         ;
 
 packedSigningE<signstate>:
@@ -3176,11 +3181,27 @@ list_of_defparam_assignments<nodep>:    //== IEEE: list_of_defparam_assignments
         ;
 
 defparam_assignment<nodep>:     // ==IEEE: defparam_assignment
-                idAny '.' idAny '=' expr                { $$ = new AstDefParam{$4, *$1, *$3, $5}; }
-        |       idAny '=' expr
-                        { $$ = nullptr; BBUNSUP($2, "Unsupported: defparam with no dot"); DEL($3); }
-        |       idAny '.' idAny '.'
-                        { $$ = nullptr; BBUNSUP($4, "Unsupported: defparam with more than one dot"); }
+                defparamIdRange '.' defparamIdRange '=' expr
+                        { $$ = new AstDefParam{$4, *$1, *$3, $5}; }
+        |       defparamIdRange '=' expr
+                        { $$ = nullptr; BBUNSUP($2, "Unsupported: defparam with no dot");
+                          DEL($3); }
+        |       defparamIdRange '.' defparamIdRange '.' defparamIdRangeList '=' expr
+                        { $$ = nullptr; BBUNSUP($4, "Unsupported: defparam with more than one dot");
+                          DEL($7); }
+        ;
+
+defparamIdRangeList<strp>:  // IEEE: part of defparam_assignment
+                defparamIdRange                         { $$ = $1; }
+        |       defparamIdRangeList '.' defparamIdRange  { $$ = $3; }
+        ;
+
+defparamIdRange<strp>:  // IEEE: part of defparam_assignment
+                idAny
+                        { $$ = $1; }
+        |       idAny part_select_rangeList
+                        { $$ = $1; BBUNSUP($2, "Unsupported: defparam with arrayed instance");
+                          DEL($2); }
         ;
 
 //************************************************
@@ -3527,7 +3548,7 @@ statement_item<nodeStmtp>:          // IEEE: statement_item
                         { $$ = new AstAssignDly{$2, $1, $4, $3}; }
         //UNSUP cycle_delay fexprLvalue yP_LTE ';'      { UNSUP }
         |       yASSIGN idClassSel '=' delay_or_event_controlE expr ';'
-                        { $$ = new AstAssign{$1, $2, $5, $4}; }
+                        { $$ = new AstAssignCont{$1, $2, $5, $4}; }
         |       yDEASSIGN variable_lvalue ';'
                         { $$ = nullptr; BBUNSUP($1, "Unsupported: Verilog 1995 deassign"); DEL($2); }
         |       yFORCE variable_lvalue '=' expr ';'
@@ -3541,9 +3562,13 @@ statement_item<nodeStmtp>:          // IEEE: statement_item
                           if ($1 == uniq_UNIQUE) $2->uniquePragma(true);
                           if ($1 == uniq_UNIQUE0) $2->unique0Pragma(true);
                           if ($1 == uniq_PRIORITY) $2->priorityPragma(true); }
-        // &&& is part of expr so case_patternList aliases to case_itemList
-        |       unique_priorityE caseStart caseAttrE yMATCHES case_itemList yENDCASE
-                        { $$ = nullptr; BBUNSUP($4, "Unsupported: matches (for tagged union)"); DEL($2, $5); }
+        // case matches uses patterns, not expressions
+        |       unique_priorityE caseStart caseAttrE yMATCHES case_matches_itemList yENDCASE
+                        { $$ = $2; if ($5) $2->addItemsp($5);
+                          $2->caseMatchesSet();
+                          if ($1 == uniq_UNIQUE) $2->uniquePragma(true);
+                          if ($1 == uniq_UNIQUE0) $2->unique0Pragma(true);
+                          if ($1 == uniq_PRIORITY) $2->priorityPragma(true); }
         |       unique_priorityE caseStart caseAttrE yINSIDE case_inside_itemList yENDCASE
                         { $$ = $2; if ($5) $2->addItemsp($5);
                           if (!$2->caseSimple()) $4->v3error("Illegal to have inside on a casex/casez");
@@ -3848,6 +3873,21 @@ case_inside_itemList<caseItemp>:        // IEEE: { case_inside_item + range_list
         |       case_inside_itemList yDEFAULT colon stmt   { $$ = $1->addNext(new AstCaseItem{$2, nullptr, $4}); }
         ;
 
+case_matches_itemList<caseItemp>:    // IEEE: { case_pattern_item + ... }
+        //                      // IEEE: case_pattern_item ::= pattern [&&& expr] : stmt
+        //                      // pattern includes expr for tagged void members (tagged id)
+                patternNoExpr colon stmt                   { $$ = new AstCaseItem{$2, $1, $3}; }
+        |       expr colon stmt                            { $$ = new AstCaseItem{$2, $1, $3}; }
+        |       yDEFAULT colon stmt                        { $$ = new AstCaseItem{$1, nullptr, $3}; }
+        |       yDEFAULT stmt                              { $$ = new AstCaseItem{$1, nullptr, $2}; }
+        |       case_matches_itemList patternNoExpr colon stmt
+                        { $$ = $1->addNext(new AstCaseItem{$3, $2, $4}); }
+        |       case_matches_itemList expr colon stmt
+                        { $$ = $1->addNext(new AstCaseItem{$3, $2, $4}); }
+        |       case_matches_itemList yDEFAULT stmt        { $$ = $1->addNext(new AstCaseItem{$2, nullptr, $3}); }
+        |       case_matches_itemList yDEFAULT colon stmt  { $$ = $1->addNext(new AstCaseItem{$2, nullptr, $4}); }
+        ;
+
 rand_case_itemList<caseItemp>:       // IEEE: { rand_case_item + ... }
         //                      // Randcase syntax doesn't have default, or expression lists
                 expr colon stmt                            { $$ = new AstCaseItem{$2, $1, $3}; }
@@ -3893,15 +3933,19 @@ caseCondList<nodeExprp>:        // IEEE: part of case_item
         |       caseCondList ',' exprTypeCompare        { $$ = $1->addNext($3); }
         ;
 
-patternNoExpr<nodep>:           // IEEE: pattern **Excluding Expr*
+patternNoExpr<nodeExprp>:       // IEEE: pattern **Excluding Expr*
                 '.' idAny/*variable*/
-                        { $$ = nullptr; BBUNSUP($1, "Unsupported: '{} tagged patterns"); }
+                        { $$ = new AstPatternVar{$1, *$2}; }
         |       yP_DOTSTAR
-                        { $$ = nullptr; BBUNSUP($1, "Unsupported: '{} tagged patterns"); }
+                        { $$ = new AstPatternStar{$1}; }
         //                      // IEEE: "expr" excluded; expand in callers
-        //                      // "yTAGGED idAny [expr]" Already part of expr
+        //                      // IEEE: tagged member_identifier [ pattern ]
+        //                      // Standalone "yTAGGED__NONPRIMARY idAny" is handled via expr in patternOne
+        //                      // Here, we need to treat yTAGGED and yTAGGED__NONPRIMARY identically.
         |       yTAGGED idAny/*member_identifier*/ patternNoExpr
-                        { $$ = nullptr; BBUNSUP($1, "Unsupported: '{} tagged patterns"); DEL($3); }
+                        { $$ = new AstTaggedPattern{$1, *$2, $3}; }
+        |       yTAGGED__NONPRIMARY idAny/*member_identifier*/ patternNoExpr
+                        { $$ = new AstTaggedPattern{$1, *$2, $3}; }
         //                      // "yP_TICKBRA patternList '}'" part of expr under assignment_pattern
         ;
 
@@ -3924,10 +3968,10 @@ patternMemberList<nodep>:       // IEEE: part of pattern and assignment_pattern
 
 patternMemberOne<patMemberp>:   // IEEE: part of pattern and assignment_pattern
                 patternKey ':' expr                     { $$ = new AstPatMember{$1->fileline(), $3, $1, nullptr}; }
-        |       patternKey ':' patternNoExpr            { $$ = nullptr; BBUNSUP($2, "Unsupported: '{} .* patterns"); DEL($1, $3); }
+        |       patternKey ':' patternNoExpr            { $$ = new AstPatMember{$1->fileline(), $3, $1, nullptr}; }
         //                      // From assignment_pattern_key
         |       yDEFAULT ':' expr                       { $$ = new AstPatMember{$1, $3, nullptr, nullptr}; $$->isDefault(true); }
-        |       yDEFAULT ':' patternNoExpr              { $$ = nullptr; BBUNSUP($2, "Unsupported: '{} .* patterns"); DEL($3); }
+        |       yDEFAULT ':' patternNoExpr              { AstPatMember* const patp = new AstPatMember{$1, $3, nullptr, nullptr}; patp->isDefault(true); $$ = patp; }
         ;
 
 patternKey<nodep>:              // IEEE: merge structure_pattern_key, array_pattern_key, assignment_pattern_key
@@ -4037,10 +4081,13 @@ for_step_assignment<nodep>:     // ==IEEE: for_step_assignment
         ;
 
 loop_variables<nodep>:          // IEEE: loop_variables
-                parseRefBase                            { $$ = $1; }
-        |       loop_variables ',' parseRefBase         { $$ = $1->addNext($3); }
-        |       ',' parseRefBase                        { $$ = new AstEmpty{$1}; $$->addNext($2); }
-        |       ','                                     { $$ = new AstEmpty{$1}; }
+                loop_variableE                          { $$ = $1; }
+        |       loop_variables ',' loop_variableE       { $$ = $1->addNext($3); }
+        ;
+
+loop_variableE<nodep>:          // IEEE: part of loop_variables
+                /* empty */                             { $$ = new AstEmpty{CRELINE()}; }
+        |       parseRefBase                            { $$ = $1; }
         ;
 
 //************************************************
@@ -5001,9 +5048,34 @@ expr<nodeExprp>:                // IEEE: part of expression/constant_expression/
         |       ~l~expr yINSIDE '{' range_list '}'      { $$ = new AstInside{$2, $1, $4}; }
         //
         //                      // IEEE: tagged_union_expression
-        //UNSUP yTAGGED id/*member*/ %prec prTAGGED             { $$ = $2; BBUNSUP("tagged reference"); }
-        //                      // Spec only allows primary
-        //UNSUP yTAGGED id/*member*/ %prec prTAGGED expr /*primary*/     { $$ = $2; BBUNSUP("tagged reference"); }
+        //                      // yTAGGED__NONPRIMARY = tokenPipeline determined no primary follows
+        |       yTAGGED__NONPRIMARY idAny/*member*/ %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, nullptr}; }
+        //                      // yTAGGED = primary follows; handle specific primary types
+        //                      // Parenthesized expression
+        |       yTAGGED idAny/*member*/ '(' expr ')' %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, $4}; }
+        //                      // Assignment patterns like tagged Add '{a, b, c}
+        |       yTAGGED idAny/*member*/ assignment_pattern %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, $3}; }
+        //                      // Integer literal
+        |       yTAGGED idAny/*member*/ yaINTNUM %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, new AstConst{$<fl>3, *$3}}; }
+        //                      // Float literal
+        |       yTAGGED idAny/*member*/ yaFLOATNUM %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, new AstConst{$<fl>3, AstConst::RealDouble{}, $3}}; }
+        //                      // String literal
+        |       yTAGGED idAny/*member*/ yaSTRING %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, new AstConst{$<fl>3, AstConst::VerilogStringLiteral{}, *$3}}; }
+        //                      // null literal
+        |       yTAGGED idAny/*member*/ yNULL %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, new AstConst{$3, AstConst::Null{}}}; }
+        //                      // Identifier as value
+        |       yTAGGED idAny/*member*/ idAny %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, new AstParseRef{$<fl>3, *$3, nullptr, nullptr}}; }
+        //                      // Concatenation
+        |       yTAGGED idAny/*member*/ '{' cateList '}' %prec prTAGGED
+                        { $$ = new AstTaggedExpr{$1, *$2, $4}; }
         //
         //======================// IEEE: primary/constant_primary
         //
@@ -5109,10 +5181,8 @@ expr<nodeExprp>:                // IEEE: part of expression/constant_expression/
         //                      // IEEE: cond_pattern - here to avoid reduce problems
         //                      // "expr yMATCHES pattern"
         //                      // IEEE: pattern - expanded here to avoid conflicts
-        |       ~l~expr yMATCHES patternNoExpr          { $$ = new AstConst{$2, AstConst::BitFalse{}};
-                                                          BBUNSUP($<fl>2, "Unsupported: matches operator"); }
-        |       ~l~expr yMATCHES ~r~expr                { $$ = new AstConst{$2, AstConst::BitFalse{}};
-                                                          BBUNSUP($<fl>2, "Unsupported: matches operator"); }
+        |       ~l~expr yMATCHES patternNoExpr          { $$ = new AstMatches{$2, $1, $3}; }
+        |       ~l~expr yMATCHES ~r~expr                { $$ = new AstMatches{$2, $1, $3}; }
         //
         //                      // IEEE: expression_or_dist - here to avoid reduce problems
         //                      // "expr yDIST '{' dist_list '}'"
@@ -6353,11 +6423,11 @@ concurrent_assertion_statement<nodeStmtp>:  // ==IEEE: concurrent_assertion_stat
         //                      // IEEE: assume_property_statement
         //                      // action_block expanded here
                 assertOrAssume yPROPERTY '(' property_spec ')' stmt %prec prLOWER_THAN_ELSE
-                        { $$ = new AstAssert{$<fl>1, new AstSampled{$<fl>1, $4}, $6, nullptr, VAssertType::CONCURRENT, $1}; }
+                        { $$ = new AstAssert{$<fl>1, $4, $6, nullptr, VAssertType::CONCURRENT, $1}; }
         |       assertOrAssume yPROPERTY '(' property_spec ')' stmt yELSE stmt
-                        { $$ = new AstAssert{$<fl>1, new AstSampled{$<fl>1, $4}, $6, $8, VAssertType::CONCURRENT, $1}; }
+                        { $$ = new AstAssert{$<fl>1, $4, $6, $8, VAssertType::CONCURRENT, $1}; }
         |       assertOrAssume yPROPERTY '(' property_spec ')' yELSE stmt
-                        { $$ = new AstAssert{$<fl>1, new AstSampled{$<fl>1, $4}, nullptr, $7, VAssertType::CONCURRENT, $1}; }
+                        { $$ = new AstAssert{$<fl>1, $4, nullptr, $7, VAssertType::CONCURRENT, $1}; }
         //                      // IEEE: cover_property_statement
         |       yCOVER yPROPERTY '(' property_spec ')' stmt
                         { $$ = new AstCover{$1, $4, $6, VAssertType::CONCURRENT}; }
@@ -7779,7 +7849,13 @@ constraint_primary<nodeExprp>:  // ==IEEE: constraint_primary
 
 constraint_expressionList<nodep>:  // ==IEEE: { constraint_expression }
                 constraint_expression                           { $$ = $1; }
+        |       ySOLVE solve_before_list yBEFORE solve_before_list ';'
+                        { ($<fl>1)->v3warn(CONSTRAINTIGN, "Ignoring unsupported: solve-before only supported as top-level constraint statement");
+                          $$ = nullptr; DEL($2, $4); }
         |       constraint_expressionList constraint_expression { $$ = addNextNull($1, $2); }
+        |       constraint_expressionList ySOLVE solve_before_list yBEFORE solve_before_list ';'
+                        { ($<fl>2)->v3warn(CONSTRAINTIGN, "Ignoring unsupported: solve-before only supported as top-level constraint statement");
+                          $$ = $1; DEL($3, $5); }
         ;
 
 constraint_expression<nodep>:  // ==IEEE: constraint_expression
@@ -8036,9 +8112,9 @@ vltItem:
         |       vltOffFront vltDFile
                         { V3Control::addIgnore($1, false, *$2, 0, 0); }
         |       vltOffFront vltDFile yVLT_D_LINES yaINTNUM
-                        { V3Control::addIgnore($1, false, *$2, $4->toUInt(), $4->toUInt() + 1); }
+                        { V3Control::addIgnore($1, false, *$2, $4->toUInt(), $4->toUInt()); }
         |       vltOffFront vltDFile yVLT_D_LINES yaINTNUM '-' yaINTNUM
-                        { V3Control::addIgnore($1, false, *$2, $4->toUInt(), $6->toUInt() + 1); }
+                        { V3Control::addIgnore($1, false, *$2, $4->toUInt(), $6->toUInt()); }
         |       vltOffFront vltDFile vltDMatch
                         { if (($1 == V3ErrorCode::I_COVERAGE) || ($1 == V3ErrorCode::I_TRACING)) {
                               $<fl>1->v3error("Argument -match only supported for lint_off");
@@ -8074,9 +8150,9 @@ vltItem:
         |       vltOnFront vltDFile
                         { V3Control::addIgnore($1, true, *$2, 0, 0); }
         |       vltOnFront vltDFile yVLT_D_LINES yaINTNUM
-                        { V3Control::addIgnore($1, true, *$2, $4->toUInt(), $4->toUInt() + 1); }
+                        { V3Control::addIgnore($1, true, *$2, $4->toUInt(), $4->toUInt()); }
         |       vltOnFront vltDFile yVLT_D_LINES yaINTNUM '-' yaINTNUM
-                        { V3Control::addIgnore($1, true, *$2, $4->toUInt(), $6->toUInt() + 1); }
+                        { V3Control::addIgnore($1, true, *$2, $4->toUInt(), $6->toUInt()); }
         |       vltOnFront vltDScope
                         { if ($1 != V3ErrorCode::I_TRACING) {
                               $<fl>1->v3error("Argument -scope only supported for tracing_on/off");
@@ -8129,10 +8205,8 @@ vltOffFront<errcodeen>:
         |       yVLT_TRACING_OFF                        { $$ = V3ErrorCode::I_TRACING; }
         |       yVLT_LINT_OFF                           { $$ = V3ErrorCode::I_LINT; }
         |       yVLT_LINT_OFF yVLT_D_RULE idAny
-                        { const char *codemsg = (*$3).c_str();
-                          if (V3ErrorCode::unusedMsg(codemsg)) $$ = V3ErrorCode::I_UNUSED;
-                          else {$$ = V3ErrorCode{codemsg}; }
-                          if ($$ == V3ErrorCode::EC_ERROR) { $1->v3error("Unknown error code: '" << *$3 << "'"); } }
+                        { $$ = V3ErrorCode{*$3};
+                          if ($$ == V3ErrorCode::EC_ERROR) $1->v3error("Unknown error code: '" << *$3 << "'"); }
         ;
 
 vltOnFront<errcodeen>:
@@ -8141,10 +8215,8 @@ vltOnFront<errcodeen>:
         |       yVLT_TRACING_ON                         { $$ = V3ErrorCode::I_TRACING; }
         |       yVLT_LINT_ON                            { $$ = V3ErrorCode::I_LINT; }
         |       yVLT_LINT_ON yVLT_D_RULE idAny
-                        { const char *codemsg = (*$3).c_str();
-                          if (V3ErrorCode::unusedMsg(codemsg)) $$ = V3ErrorCode::I_UNUSED;
-                          else {$$ = V3ErrorCode{codemsg}; }
-                          if ($$ == V3ErrorCode::EC_ERROR) { $1->v3error("Unknown error code: '" << *$3 << "'"); } }
+                        { $$ = V3ErrorCode{*$3};
+                          if ($$ == V3ErrorCode::EC_ERROR) $1->v3error("Unknown error code: '" << *$3 << "'"); }
         ;
 
 vltDBlock<strp>:  // --block <arg>

@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you can
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -155,8 +155,9 @@ enum VerilatedVarFlags {
     VLVF_PUB_RD = (1 << 8),  // Public readable
     VLVF_PUB_RW = (1 << 9),  // Public writable
     VLVF_DPI_CLAY = (1 << 10),  // DPI compatible C standard layout
-    VLVF_FORCEABLE = (1 << 11),  // Forceable
-    VLVF_CONTINUOUSLY = (1 << 12)  // Is continously assigned
+    VLVF_CONTINUOUSLY = (1 << 11),  // Is continously assigned
+    VLVF_FORCEABLE = (1 << 12),  // Forceable
+    VLVF_SIGNED = (1 << 13)  // Signed integer
 };
 
 // IEEE 1800-2023 Table 20-6
@@ -413,6 +414,7 @@ protected:
         std::string m_profExecFilename;  // +prof+exec+file filename
         std::string m_profVltFilename;  // +prof+vlt filename
         std::string m_solverProgram;  // SMT solver program
+        bool m_warnUnsatConstr = true;  // Warn on unsatisfied constraints
         VlOs::DeltaCpuTime m_cpuTimeStart{false};  // CPU time, starts when create first model
         VlOs::DeltaWallTime m_wallTimeStart{false};  // Wall time, starts when create first model
         std::vector<traceBaseModelCb_t> m_traceBaseModelCbs;  // Callbacks to traceRegisterModel
@@ -652,6 +654,9 @@ public:
     // Internal: SMT solver program
     std::string solverProgram() const VL_MT_SAFE;
     void solverProgram(const std::string& flag) VL_MT_SAFE;
+    // Internal: Control display of unsatisfied constraints
+    bool warnUnsatConstr() const VL_MT_SAFE { return m_ns.m_warnUnsatConstr; }
+    void warnUnsatConstr(bool flag) VL_MT_SAFE { m_ns.m_warnUnsatConstr = flag; }
 
     // Internal: Find scope
     const VerilatedScope* scopeFind(const char* namep) const VL_MT_SAFE;

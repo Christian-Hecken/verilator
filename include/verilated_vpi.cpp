@@ -3,7 +3,7 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2009-2025 by Wilson Snyder. This program is free software; you can
+// Copyright 2009-2026 by Wilson Snyder. This program is free software; you can
 // redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -2368,6 +2368,11 @@ PLI_INT32 vpi_get(PLI_INT32 property, vpiHandle object) {
         if (VL_UNLIKELY(!vop)) return vpiUndefined;
         return vop->size();
     }
+    case vpiSigned: {
+        const VerilatedVpioVarBase* const vop = VerilatedVpioVarBase::castp(object);
+        if (VL_UNLIKELY(!vop)) return vpiUndefined;
+        return vop->varp()->isSigned();
+    }
     default:
         VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported property %s, nothing will be returned",
                       __func__, VerilatedVpiError::strFromVpiProp(property));
@@ -2812,18 +2817,17 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
         if (VL_UNLIKELY(!baseSignalVop->varp()->isPublicRW())) {
             VL_VPI_ERROR_(__FILE__, __LINE__,
                           "vpi_put_value was used on signal marked read-only,"
-                          " use public_flat_rw instead for %s : %s",
-                          baseSignalVop->fullname(), baseSignalVop->scopep()->defname());
+                          " use public_flat_rw instead for '%s'",
+                          baseSignalVop->fullname());
             return nullptr;
         }
 
         // NOLINTNEXTLINE(readability-simplify-boolean-expr);
         if (VL_UNLIKELY((forceFlag == vpiForceFlag || forceFlag == vpiReleaseFlag)
                         && !baseSignalVop->varp()->isForceable())) {
-            VL_VPI_ERROR_(__FILE__, __LINE__,
-                          "vpi_put_value was used with %s on non-forceable signal '%s' : '%s'",
+            VL_VPI_ERROR_("", 0, "vpi_put_value used with %s on non-forceable signal '%s'",
                           forceFlag == vpiForceFlag ? "vpiForceFlag" : "vpiReleaseFlag",
-                          baseSignalVop->fullname(), baseSignalVop->scopep()->defname());
+                          baseSignalVop->fullname());
             return nullptr;
         }
         if (!vl_check_format(baseSignalVop->varp(), valuep, baseSignalVop->fullname(), false))
@@ -2968,10 +2972,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
             // Step 2: Deactivate __VforceEn
             VerilatedVpiImp::setAllBitsToValue(forceEnableSignalVop.get(), 0);
 
-            // TODO: According to the SystemVerilog specification,
-            // vpi_put_value should return a handle to the scheduled event
-            // if the vpiReturnEvent flag is selected, NULL otherwise.
-            return object;
+            return nullptr;
         }
 
         if (valuep->format == vpiVectorVal) {

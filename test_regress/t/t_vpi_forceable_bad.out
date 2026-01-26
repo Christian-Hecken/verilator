@@ -1,2 +1,2 @@
-%Error: .../verilated_vpi.cpp:2827: vpi_put_value was used with vpiForceFlag on non-forceable signal 't.nonForceableSignal' : 't'
+%Error: vpi_put_value used with vpiForceFlag on non-forceable signal 't.nonForceableSignal'
 Aborting...

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -381,6 +381,8 @@ public:
         addItemsp(itemsp);
     }
     ASTGEN_MEMBERS_AstCase;
+    void dump(std::ostream& str) const override;
+    void dumpJson(std::ostream& str) const override;
     int instrCount() const override { return INSTR_COUNT_BRANCH; }
     string verilogKwd() const override { return casez() ? "casez" : casex() ? "casex" : "case"; }
     bool sameNode(const AstNode* samep) const override {
@@ -389,8 +391,10 @@ public:
     bool casex() const { return m_casex == VCaseType::CT_CASEX; }
     bool casez() const { return m_casex == VCaseType::CT_CASEZ; }
     bool caseInside() const { return m_casex == VCaseType::CT_CASEINSIDE; }
+    bool caseMatches() const { return m_casex == VCaseType::CT_CASEMATCHES; }
     bool caseSimple() const { return m_casex == VCaseType::CT_CASE; }
     void caseInsideSet() { m_casex = VCaseType::CT_CASEINSIDE; }
+    void caseMatchesSet() { m_casex = VCaseType::CT_CASEMATCHES; }
     bool fullPragma() const { return m_fullPragma; }
     void fullPragma(bool flag) { m_fullPragma = flag; }
     bool parallelPragma() const { return m_parallelPragma; }
@@ -1352,6 +1356,20 @@ public:
     AstNodeAssign* cloneType(AstNodeExpr* lhsp, AstNodeExpr* rhsp) override {
         AstNode* const controlp = timingControlp() ? timingControlp()->cloneTree(false) : nullptr;
         return new AstAssign{fileline(), lhsp, rhsp, controlp};
+    }
+};
+class AstAssignCont final : public AstNodeAssign {
+    // Continuous procedural 'assign'.  See AstAssignW for non-procedural version.
+public:
+    AstAssignCont(FileLine* fl, AstNodeExpr* lhsp, AstNodeExpr* rhsp,
+                  AstNode* timingControlp = nullptr)
+        : ASTGEN_SUPER_AssignCont(fl, lhsp, rhsp, timingControlp) {
+        dtypeFrom(lhsp);
+    }
+    ASTGEN_MEMBERS_AstAssignCont;
+    AstNodeAssign* cloneType(AstNodeExpr* lhsp, AstNodeExpr* rhsp) override {
+        AstNode* const controlp = timingControlp() ? timingControlp()->cloneTree(false) : nullptr;
+        return new AstAssignCont{fileline(), lhsp, rhsp, controlp};
     }
 };
 class AstAssignDly final : public AstNodeAssign {

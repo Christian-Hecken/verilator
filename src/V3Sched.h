@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -290,7 +290,7 @@ public:
     AstSenTree* newExtraTriggerSenTree(AstVarScope* vscp, uint32_t index) const;
 
     // Set then extra trigger bit at 'index' to the value of 'vscp', then set 'vscp' to 0
-    void addExtraTriggerAssignment(AstVarScope* vscp, uint32_t index) const;
+    void addExtraTriggerAssignment(AstVarScope* vscp, uint32_t index, bool clear = true) const;
 };
 
 // Everything needed for combining timing with static scheduling.

@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -47,9 +47,9 @@ bool V3LinkDotIfaceCapture::finalizeCapturedEntry(CapturedMap::iterator it, cons
 string V3LinkDotIfaceCapture::extractIfacePortName(const string& dotText) {
     string name = dotText;
     const size_t dotPos = name.find('.');
-    if (dotPos != string::npos) name = name.substr(0, dotPos);
+    if (dotPos != string::npos) name.resize(dotPos);
     const size_t braPos = name.find("__BRA__");
-    if (braPos != string::npos) name = name.substr(0, braPos);
+    if (braPos != string::npos) name.resize(braPos);
     return name;
 }
 
@@ -57,13 +57,22 @@ void V3LinkDotIfaceCapture::add(AstRefDType* refp, AstCell* cellp, AstNodeModule
                                 AstTypedef* typedefp, AstNodeModule* typedefOwnerModp,
                                 AstVar* ifacePortVarp) {
     if (!refp) return;
-
     if (!typedefp) typedefp = refp->typedefp();
-
     if (!typedefOwnerModp && typedefp) typedefOwnerModp = findOwnerModule(typedefp);
-
     s_map[refp] = CapturedIfaceTypedef{
-        refp, cellp, ownerModp, typedefp, typedefOwnerModp, nullptr, ifacePortVarp};
+        CaptureType::IFACE, refp,    cellp,        nullptr, ownerModp, typedefp,
+        typedefOwnerModp,   nullptr, ifacePortVarp};
+}
+
+void V3LinkDotIfaceCapture::addClass(AstRefDType* refp, AstClass* origClassp,
+                                     AstNodeModule* ownerModp, AstTypedef* typedefp,
+                                     AstNodeModule* typedefOwnerModp) {
+    if (!refp) return;
+    if (!typedefp) typedefp = refp->typedefp();
+    if (!typedefOwnerModp && typedefp) typedefOwnerModp = findOwnerModule(typedefp);
+    s_map[refp] = CapturedIfaceTypedef{CaptureType::CLASS, refp,      nullptr,
+                                       origClassp,         ownerModp, typedefp,
+                                       typedefOwnerModp,   nullptr,   nullptr};
 }
 
 const V3LinkDotIfaceCapture::CapturedIfaceTypedef*
@@ -99,13 +108,25 @@ bool V3LinkDotIfaceCapture::replaceTypedef(const AstRefDType* refp, AstTypedef* 
     if (it == s_map.end()) return false;
     it->second.typedefp = newTypedefp;
     it->second.typedefOwnerModp = findOwnerModule(newTypedefp);
+
+    // For CLASS captures, update the RefDType node directly
+    if (it->second.captureType == CaptureType::CLASS && it->second.refp) {
+        it->second.refp->typedefp(newTypedefp);
+        // Also update classOrPackagep to point to the specialized class
+        if (AstClass* const newClassp = VN_CAST(it->second.typedefOwnerModp, Class)) {
+            it->second.refp->classOrPackagep(newClassp);
+        }
+        UINFO(9, "class capture updated RefDType typedefp: " << it->second.refp << " -> "
+                                                             << newTypedefp);
+    }
+
     finalizeCapturedEntry(it, "typedef clone");
     return true;
 }
 
 void V3LinkDotIfaceCapture::propagateClone(const AstRefDType* origRefp, AstRefDType* newRefp) {
     if (!origRefp || !newRefp) return;
-    auto it = s_map.find(origRefp);
+    const auto it = s_map.find(origRefp);
     UASSERT_OBJ(it != s_map.end(), origRefp,
                 "iface capture propagateClone missing entry for orig=" << cvtToStr(origRefp));
     CapturedIfaceTypedef& entry = it->second;
@@ -182,7 +203,7 @@ void V3LinkDotIfaceCapture::captureTypedefContext(
     AstVar* ifacePortVarp = nullptr;
     if (!dotText.empty() && curSymp) {
         const std::string portName = extractIfacePortName(dotText);
-        if (VSymEnt* const portSymp = curSymp->findIdFallback(portName)) {
+        if (const VSymEnt* const portSymp = curSymp->findIdFallback(portName)) {
             ifacePortVarp = VN_CAST(portSymp->nodep(), Var);
             UINFO(9, indentFn() << "iface capture found port var '" << portName << "' -> "
                                 << ifacePortVarp);

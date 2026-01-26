@@ -37,6 +37,7 @@ extern "C" int mon_check();
 
    // verilator lint_off ASCRANGE
    reg [0:61]   quads[2:3]      /*verilator public_flat_rw @(posedge clk) */;
+   reg [8:19]   rev   /*verilator public_flat_rw @(posedge clk) */;
    // verilator lint_on ASCRANGE
 
    reg [31:0]      count        /*verilator public_flat */;
@@ -53,6 +54,11 @@ extern "C" int mon_check();
 
    integer        status;
 
+   integer        integer1       /*verilator public_flat_rw */;
+   byte           byte1          /*verilator public_flat_rw */;
+   shortint       short1         /*verilator public_flat_rw */;
+   int            int1           /*verilator public_flat_rw */;
+   longint        long1          /*verilator public_flat_rw */;
    real           real1          /*verilator public_flat_rw */;
    string         str1           /*verilator public_flat_rw */;
    // specifically public and not public_flat_rw here so as to induce the C++
@@ -76,8 +82,15 @@ extern "C" int mon_check();
       text = "Verilog Test module";
       too_big = "some text";
 
+      integer1 = 123;
+      byte1 = 123;
+      short1 = 123;
+      int1 = 123;
+      long1 = 123;
       real1 = 1.0;
       str1 = "hello";
+
+      rev = 12'habc;
 
 `ifdef VERILATOR
       status = $c32("mon_check()");

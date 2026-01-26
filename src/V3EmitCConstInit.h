@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -98,6 +98,11 @@ protected:
         const V3Number& num = nodep->num();
         UASSERT_OBJ(!num.isFourState(), nodep, "4-state value in constant pool");
         putns(nodep, num.emitC());
+    }
+    void visit(AstUnbounded* nodep) override {
+        // e.g. when emitting a public parameter's "$" value
+        // But Unbounded is only special during elaboration, so just use zero
+        putns(nodep, "0");
     }
 
     // Default

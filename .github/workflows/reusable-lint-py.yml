@@ -41,10 +41,11 @@ jobs:
 
       - name: Install python dependencies
         run: |
+          sudo apt install python3-clang || \
           sudo apt install python3-clang
           make venv
 
       - name: Lint
-        run: |
+        run: |-
           source .venv/bin/activate
           make -k lint-py

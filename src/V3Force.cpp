@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -244,7 +244,7 @@ private:
                                                 << ELEMENTS_MAX << " elements");
             }
             bool complexElem = true;
-            if (AstBasicDType* const basicp = VN_CAST(dtp, BasicDType)) {
+            if (const AstBasicDType* const basicp = VN_CAST(dtp, BasicDType)) {
                 complexElem = basicp->isOpaque();
             }
             if (complexElem) {

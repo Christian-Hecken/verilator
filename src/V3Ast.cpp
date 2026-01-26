@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -138,6 +138,13 @@ AstNode* AstNode::abovep() const {
     UASSERT_OBJ(!m_nextp || firstAbovep(), this, "abovep() not allowed when in midlist");
     const AstNode* const firstp = firstAbovep() ? this : m_headtailp;
     return firstp->backp();
+}
+AstNode* AstNode::aboveLoopp() const {
+    // Returns parent node. Avoid using this, may have performance issues.
+    const AstNode* nodep = this;
+    // Backwards over peers (versus parents)
+    while (nodep->backp() && nodep->backp()->nextp() == nodep) nodep = nodep->backp();
+    return nodep->backp();
 }
 
 string AstNode::encodeName(const string& namein) {

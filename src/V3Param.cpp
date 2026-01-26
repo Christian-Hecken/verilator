@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -54,6 +54,7 @@
 #include "V3EmitV.h"
 #include "V3Hasher.h"
 #include "V3LinkDotIfaceCapture.h"
+#include "V3MemberMap.h"
 #include "V3Os.h"
 #include "V3Parse.h"
 #include "V3Simulate.h"
@@ -290,6 +291,9 @@ class ParamProcessor final {
     // Class default paramater dependencies
     std::vector<std::pair<AstParamTypeDType*, int>> m_classParams;
     std::unordered_map<AstParamTypeDType*, int> m_paramIndex;
+
+    // member names cached for fast lookup
+    VMemberMap m_memberMap;
 
     // METHODS
 
@@ -806,6 +810,27 @@ class ParamProcessor final {
         }
     }
 
+    // Helper to resolve DOT to RefDType for class type references
+    void resolveDotToTypedef(AstNode* exprp) {
+        AstDot* const dotp = VN_CAST(exprp, Dot);
+        if (!dotp) return;
+        const AstClassOrPackageRef* const classRefp = VN_CAST(dotp->lhsp(), ClassOrPackageRef);
+        if (!classRefp) return;
+        const AstClass* const lhsClassp = VN_CAST(classRefp->classOrPackageSkipp(), Class);
+        if (!lhsClassp) return;
+        AstParseRef* const parseRefp = VN_CAST(dotp->rhsp(), ParseRef);
+        if (!parseRefp) return;
+
+        AstTypedef* const tdefp
+            = VN_CAST(m_memberMap.findMember(lhsClassp, parseRefp->name()), Typedef);
+        if (tdefp) {
+            AstRefDType* const refp = new AstRefDType{dotp->fileline(), tdefp->name()};
+            refp->typedefp(tdefp);
+            dotp->replaceWith(refp);
+            VL_DO_DANGLING(dotp->deleteTree(), dotp);
+        }
+    }
+
     void cellPinCleanup(AstNode* nodep, AstPin* pinp, AstNodeModule* srcModp, string& longnamer,
                         bool& any_overridesr) {
         if (!pinp->exprp()) return;  // No-connect
@@ -846,7 +871,10 @@ class ParamProcessor final {
                     pinExprp->replaceWith(new AstConst{pinp->fileline(), AstConst::WidthedValue{},
                                                        modvarp->width(), 0});
                     VL_DO_DANGLING(pinExprp->deleteTree(), pinExprp);
-                } else if (origp && exprp->sameTree(origp)) {
+                } else if (origp
+                           && (exprp->sameTree(origp)
+                               || (exprp->num().width() == origp->num().width()
+                                   && ParameterizedHierBlocks::areSame(exprp, origp)))) {
                     // Setting parameter to its default value.  Just ignore it.
                     // This prevents making additional modules, and makes coverage more
                     // obvious as it won't show up under a unique module page name.
@@ -862,6 +890,10 @@ class ParamProcessor final {
                 }
             }
         } else if (AstParamTypeDType* const modvarp = pinp->modPTypep()) {
+            // Handle DOT with ParseRef RHS (e.g., p_class#(8)::p_type)
+            // by this point ClassOrPackageRef should be updated to point to the specialized class.
+            resolveDotToTypedef(pinp->exprp());
+
             AstNodeDType* rawTypep = VN_CAST(pinp->exprp(), NodeDType);
             if (rawTypep) V3Width::widthParamsEdit(rawTypep);
             AstNodeDType* exprp = rawTypep ? rawTypep->skipRefToNonRefp() : nullptr;
@@ -1246,17 +1278,13 @@ class ParamProcessor final {
         AstRefDType* const refDTypep = VN_CAST(nodep->backp(), RefDType);
         AstClass* const newClassp = refDTypep ? VN_CAST(newModp, Class) : nullptr;
         if (newClassp && !refDTypep->typedefp() && !refDTypep->subDTypep()) {
-            for (AstNode* itemp = newClassp->membersp(); itemp; itemp = itemp->nextp()) {
-                if (AstTypedef* const typedefp = VN_CAST(itemp, Typedef)) {
-                    if (typedefp->name() == refDTypep->name()) {
-                        refDTypep->typedefp(typedefp);
-                        refDTypep->classOrPackagep(newClassp);
-                        UINFO(9, "Resolved parameterized class typedef: "
-                                     << refDTypep->name() << " -> " << typedefp << " in "
-                                     << newClassp->name());
-                        break;
-                    }
-                }
+            if (AstTypedef* const typedefp
+                = VN_CAST(m_memberMap.findMember(newClassp, refDTypep->name()), Typedef)) {
+                refDTypep->typedefp(typedefp);
+                refDTypep->classOrPackagep(newClassp);
+                UINFO(9, "Resolved parameterized class typedef: " << refDTypep->name() << " -> "
+                                                                  << typedefp << " in "
+                                                                  << newClassp->name());
             }
         }
         return newModp;
@@ -1290,13 +1318,13 @@ public:
         srcModp->someInstanceName(instanceName);
 
         AstNodeModule* newModp = nullptr;
-        if (AstCell* cellp = VN_CAST(nodep, Cell)) {
+        if (AstCell* const cellp = VN_CAST(nodep, Cell)) {
             newModp = cellDeparam(cellp, srcModp);
-        } else if (AstIfaceRefDType* ifaceRefDTypep = VN_CAST(nodep, IfaceRefDType)) {
+        } else if (AstIfaceRefDType* const ifaceRefDTypep = VN_CAST(nodep, IfaceRefDType)) {
             newModp = ifaceRefDeparam(ifaceRefDTypep, srcModp);
-        } else if (AstClassRefDType* classRefp = VN_CAST(nodep, ClassRefDType)) {
+        } else if (AstClassRefDType* const classRefp = VN_CAST(nodep, ClassRefDType)) {
             newModp = classRefDeparam(classRefp, srcModp);
-        } else if (AstClassOrPackageRef* classRefp = VN_CAST(nodep, ClassOrPackageRef)) {
+        } else if (AstClassOrPackageRef* const classRefp = VN_CAST(nodep, ClassOrPackageRef)) {
             newModp = classRefDeparam(classRefp, srcModp);
         } else {
             nodep->v3fatalSrc("Expected module parameterization");
@@ -1997,7 +2025,7 @@ public:
         netlistp->foreach([](AstNodeFTaskRef* ftaskrefp) {
             AstNodeFTask* ftaskp = ftaskrefp->taskp();
             if (!ftaskp || !ftaskp->classMethod()) return;
-            string funcName = ftaskp->name();
+            const string funcName = ftaskp->name();
             for (AstNode* backp = ftaskrefp->backp(); backp; backp = backp->backp()) {
                 if (VN_IS(backp, Class)) {
                     if (backp == ftaskrefp->classOrPackagep())
@@ -2014,7 +2042,7 @@ public:
             }
             UASSERT_OBJ(classp, ftaskrefp, "Class method has no class above it");
             if (classp->user3p()) return;  // will not get removed, no need to relink
-            AstClass* parametrizedClassp = VN_CAST(classp->user4p(), Class);
+            AstClass* const parametrizedClassp = VN_CAST(classp->user4p(), Class);
             if (!parametrizedClassp) return;
             AstNodeFTask* newFuncp = nullptr;
             parametrizedClassp->exists([&newFuncp, funcName](AstNodeFTask* ftaskp) {

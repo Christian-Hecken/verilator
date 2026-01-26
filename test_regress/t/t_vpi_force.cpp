@@ -410,8 +410,7 @@ extern "C" int tryInvalidPutOperations() {
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
         "str1", {.format = vpiStringVal, .value = {.str = const_cast<PLI_BYTE8*>("foo")}},
         vpiForceFlag,
-        "vpi_put_value was used with vpiForceFlag on non-forceable signal 't.test.str1' : "
-        "'Test'"));
+        "vpi_put_value used with vpiForceFlag on non-forceable signal 't.test.str1'"));
 
     CHECK_RESULT_Z(expectVpiPutError(  // NOLINT(concurrency-mt-unsafe)
         "octString", {.format = vpiOctStrVal, .value = {.str = const_cast<PLI_BYTE8*>("123A")}},

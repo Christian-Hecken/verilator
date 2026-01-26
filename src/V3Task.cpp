@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -32,6 +32,7 @@
 #include "V3EmitCBase.h"
 #include "V3Graph.h"
 #include "V3Stats.h"
+#include "V3UniqueNames.h"
 
 #include <tuple>
 
@@ -371,6 +372,7 @@ struct TaskDpiUtils final {
                               : dtypep->width() <= 16 ? 'S'
                                                       : *dtypep->charIQWN();
         const std::string& size = std::to_string(dtypep->width());
+        // cppcheck-suppress strPlusChar
         return {"VL_SET_"s + sizeChar + "_" + vecType + "(" + size + ", ", true};
     }
 };
@@ -393,6 +395,8 @@ class TaskVisitor final : public VNVisitor {
 
     // STATE
     TaskStateVisitor* const m_statep;  // Common state between visitors
+    V3UniqueNames m_initArrayTmpNames;  // For generating unique temporary variable names for
+                                        // arguments being AstInitArray
     AstNodeModule* m_modp = nullptr;  // Current module
     AstTopScope* const m_topScopep = v3Global.rootp()->topScopep();  // The AstTopScope
     AstScope* m_scopep = nullptr;  // Current scope
@@ -534,8 +538,11 @@ class TaskVisitor final : public VNVisitor {
                         refArgOk = cMethodp->method() == VCMethod::DYN_AT_WRITE_APPEND
                                    || cMethodp->method() == VCMethod::DYN_AT_WRITE_APPEND_BACK;
                     } else {
-                        refArgOk = cMethodp->method() == VCMethod::ARRAY_AT
-                                   || cMethodp->method() == VCMethod::ARRAY_AT_BACK;
+                        if (cMethodp->method() == VCMethod::ARRAY_AT) {
+                            // Change the method to writable variant
+                            cMethodp->method(VCMethod::ARRAY_AT_WRITE);
+                        }
+                        refArgOk = cMethodp->method() == VCMethod::ARRAY_AT_WRITE;
                     }
                 }
                 if (refArgOk) {
@@ -1438,6 +1445,29 @@ class TaskVisitor final : public VNVisitor {
         UINFOTREE(9, newp, "", "newfunc");
         m_insStmtp->addHereThisAsNext(newp);
     }
+    void processPins(AstNodeFTaskRef* nodep) {
+        // Create a fresh variable for each concat array present in pins list
+        for (AstNode* pinp = nodep->pinsp(); pinp; pinp = pinp->nextp()) {
+            AstArg* const argp = VN_AS(pinp, Arg);
+            AstInitArray* const arrayp = VN_CAST(argp->exprp(), InitArray);
+            if (!arrayp) continue;
+
+            FileLine* const flp = arrayp->fileline();
+            const std::string tempName = m_initArrayTmpNames.get(argp);
+            AstVar* const substp = new AstVar{flp, VVarType::VAR, tempName, arrayp->dtypep()};
+            substp->funcLocal(true);
+            AstVarScope* const substvscp = createVarScope(substp, tempName);
+
+            AstAssign* const assignp
+                = new AstAssign{flp, new AstVarRef{arrayp->fileline(), substvscp, VAccess::WRITE},
+                                arrayp->unlinkFrBack()};
+
+            AstExprStmt* const exprstmtp = new AstExprStmt{
+                flp, substp, new AstVarRef{arrayp->fileline(), substvscp, VAccess::READ}};
+            exprstmtp->stmtsp()->addNext(assignp);
+            argp->exprp(exprstmtp);
+        }
+    }
 
     // VISITORS
     void visit(AstNodeModule* nodep) override {
@@ -1494,6 +1524,7 @@ class TaskVisitor final : public VNVisitor {
         AstNode* beginp;
         AstCNew* cnewp = nullptr;
         if (m_statep->ftaskNoInline(nodep->taskp())) {
+            processPins(nodep);
             // This may share VarScope's with a public task, if any.  Yuk.
             beginp = createNonInlinedFTask(nodep, namePrefix, outvscp, cnewp /*ref*/);
         } else {
@@ -1669,7 +1700,8 @@ class TaskVisitor final : public VNVisitor {
 public:
     // CONSTRUCTORS
     TaskVisitor(AstNetlist* nodep, TaskStateVisitor* statep)
-        : m_statep{statep} {
+        : m_statep{statep}
+        , m_initArrayTmpNames{"__VInitArrayTemp"} {
         iterate(nodep);
     }
     ~TaskVisitor() {

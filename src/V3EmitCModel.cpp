@@ -6,7 +6,7 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2025 by Wilson Snyder. This program is free software; you
+// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
 // can redistribute it and/or modify it under the terms of either the GNU
 // Lesser General Public License Version 3 or the Perl Artistic License
 // Version 2.0.
@@ -414,11 +414,11 @@ class EmitCModel final : public EmitCFunc {
         if (v3Global.hasClasses()) puts("vlSymsp->__Vm_deleter.deleteAll();\n");
 
         puts("if (VL_UNLIKELY(!vlSymsp->__Vm_didInit)) {\n");
-        puts("vlSymsp->__Vm_didInit = true;\n");
         puts("VL_DEBUG_IF(VL_DBG_MSGF(\"+ Initial\\n\"););\n");
         puts(topModNameProtected + "__" + protect("_eval_static") + "(&(vlSymsp->TOP));\n");
         puts(topModNameProtected + "__" + protect("_eval_initial") + "(&(vlSymsp->TOP));\n");
         puts(topModNameProtected + "__" + protect("_eval_settle") + "(&(vlSymsp->TOP));\n");
+        puts("vlSymsp->__Vm_didInit = true;\n");
         puts("}\n");
 
         if (v3Global.opt.profExec() && !v3Global.opt.hierChild()
@@ -544,7 +544,7 @@ class EmitCModel final : public EmitCFunc {
         puts(EmitCUtil::voidSelfAssign(modp));
         puts(EmitCUtil::symClassAssign());
         puts("if (!vlSymsp->_vm_contextp__->calcUnusedSigs()) {\n");
-        puts("VL_FATAL_MT(__FILE__, __LINE__, __FILE__,\n");
+        puts("VL_FATAL_MT(__FILE__, __LINE__, __FILE__,\n");  // LCOV_EXCL_LINE
         puts("\"Turning on wave traces requires Verilated::traceEverOn(true) call before time "
              "0.\");\n");
         puts("}\n");
