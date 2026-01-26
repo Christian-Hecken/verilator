@@ -250,32 +250,10 @@ public:
 };
 
 //===========================================================================
-// Forceable Verilator variable metadata about force control and read signals
-// Thread safety: All members are of type VerilatedVar, so assume same thread safety model as
-// VerilatedVar. Accessor functions allow concurrent access to VerilatedVar pointers, but so does
-// VerilatedScope::varFind, so it is assumed that VerilatedVar is equipped to handle asynchronous
-// accesses.
-
-class VerilatedVar;
-class ForceableInfo final {
-    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
-        nullptr, nullptr};  // __VforceEn and __VforceVal control signals
-    const std::unique_ptr<VerilatedVar> m_forceReadSignalp{nullptr};  // __VforceRd signal
-public:
-    ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
-                  std::unique_ptr<VerilatedVar> forceReadSignalp) VL_MT_UNSAFE
-        : m_forceControlSignals{forceControlSignals},
-          m_forceReadSignalp{std::move(forceReadSignalp)} {}
-    const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return m_forceReadSignalp.get(); }
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
-        return m_forceControlSignals;
-    }
-};
-
-//===========================================================================
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
+class ForceableInfo;
 class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
@@ -311,6 +289,28 @@ public:
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
     const ForceableInfo* forceableInfo() const { return m_forceableInfo.get(); }
+};
+
+//===========================================================================
+// Forceable Verilator variable metadata about force control and read signals
+// Thread safety: All members are of type VerilatedVar, so assume same thread safety model as
+// VerilatedVar. Accessor functions allow concurrent access to VerilatedVar pointers, but so does
+// VerilatedScope::varFind, so it is assumed that VerilatedVar is equipped to handle asynchronous
+// accesses.
+
+class ForceableInfo final {
+    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
+        nullptr, nullptr};  // __VforceEn and __VforceVal control signals
+    const VerilatedVar m_forceReadSignal;  // __VforceRd signal
+public:
+    ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
+                  VerilatedVar forceReadSignal) VL_MT_UNSAFE
+        : m_forceControlSignals{forceControlSignals},
+          m_forceReadSignal{std::move(forceReadSignal)} {}
+    const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return &m_forceReadSignal; }
+    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
+        return m_forceControlSignals;
+    }
 };
 
 #endif  // Guard

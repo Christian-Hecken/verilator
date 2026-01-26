@@ -3568,10 +3568,13 @@ VerilatedVar* VerilatedScope::forceableVarInsert(
     const VerilatedVarFlags forceReadValueVlflags
         = static_cast<VerilatedVarFlags>(vlflags & ~VLVF_FORCEABLE & ~VLVF_PUB_RW & ~VLVF_PUB_RD);
 
-    // Cannot use make_unique because constructor of VerilatedVar is protected
-    std::unique_ptr<VerilatedVar> forceReadSignalp = std::unique_ptr<VerilatedVar>(
-        new VerilatedVar{forceReadSignalName, forceReadSignalData, vltype, forceReadValueVlflags,
-                         udims, pdims, isParam});
+    VerilatedVar forceReadSignal{forceReadSignalName,
+                                 forceReadSignalData,
+                                 vltype,
+                                 forceReadValueVlflags,
+                                 udims,
+                                 pdims,
+                                 isParam};
 
     va_list ap;
     va_start(ap, pdims);
@@ -3580,14 +3583,13 @@ VerilatedVar* VerilatedScope::forceableVarInsert(
     for (int i = 0; i < pdims; ++i) {
         const int msb = va_arg(ap, int);
         const int lsb = va_arg(ap, int);
-        forceReadSignalp->m_packed[i].m_left = msb;
-        forceReadSignalp->m_packed[i].m_right = lsb;
+        forceReadSignal.m_packed[i].m_left = msb;
+        forceReadSignal.m_packed[i].m_right = lsb;
     }
     va_end(ap);
 
     std::unique_ptr<ForceableInfo> forceableInfop
-        = std::make_unique<ForceableInfo>(forceControlSignals, std::move(forceReadSignalp));
-    forceReadSignalp = nullptr;
+        = std::make_unique<ForceableInfo>(forceControlSignals, std::move(forceReadSignal));
 
     VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
                      isParam, std::move(forceableInfop));
