@@ -249,7 +249,6 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         stmt += varp->vlEnumType();  // VLVT_UINT32 etc
         stmt += ", ";
         stmt += varp->vlEnumDir();  // VLVD_IN etc
-        if (varp->dtypep()->skipRefp()->isSigned()) stmt += "|VLVF_SIGNED";
         stmt += ", ";
         stmt += std::to_string(udim);
         stmt += ", ";
@@ -278,7 +277,6 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         stmt += varp->vlEnumType();  // VLVT_UINT32 etc
         stmt += ", ";
         stmt += varp->vlEnumDir();  // VLVD_IN etc
-        if (varp->dtypep()->skipRefp()->isSigned()) stmt += "|VLVF_SIGNED";
         stmt += ", " + std::string(varp->isContinuously() ? "true" : "false");
         stmt += ", &(";
         stmt += varName + "__VforceRd";
