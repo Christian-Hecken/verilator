@@ -258,7 +258,7 @@ class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
-    std::unique_ptr<const ForceableInfo>
+    std::shared_ptr<const ForceableInfo>
         m_forceableInfo;  // Force control signals, Read signal and information about signal
                           // assignment
 
@@ -274,7 +274,7 @@ protected:
         , m_isParam{isParam} {}
     VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
                  VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
-                 std::unique_ptr<const ForceableInfo> forceableInfo)
+                 std::shared_ptr<const ForceableInfo> forceableInfo)
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
         , m_namep{namep}
@@ -283,7 +283,6 @@ protected:
 
 public:
     ~VerilatedVar() = default;
-    VerilatedVar(VerilatedVar&&) = default;
     // ACCESSORS
     void* datap() const { return m_datap; }
     const char* name() const { return m_namep; }
@@ -299,17 +298,17 @@ public:
 // accesses.
 
 class ForceableInfo final {
-    const std::pair<VerilatedVar*, VerilatedVar*> m_forceControlSignals{
-        nullptr, nullptr};  // __VforceEn and __VforceVal control signals
+    std::pair<VerilatedVar, VerilatedVar>
+        m_forceControlSignals;  // __VforceEn and __VforceVal control signals
     const VerilatedVar m_forceReadSignal;  // __VforceRd signal
 public:
-    ForceableInfo(const std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals,
-                  VerilatedVar forceReadSignal) VL_MT_UNSAFE
+    ForceableInfo(const std::pair<VerilatedVar, VerilatedVar> forceControlSignals,
+                  const VerilatedVar forceReadSignal) VL_MT_UNSAFE
         : m_forceControlSignals{forceControlSignals},
-          m_forceReadSignal{std::move(forceReadSignal)} {}
-    const VerilatedVar* forceReadSignal() const VL_MT_UNSAFE { return &m_forceReadSignal; }
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals() const VL_MT_UNSAFE {
-        return m_forceControlSignals;
+          m_forceReadSignal{forceReadSignal} {}
+    const VerilatedVar* forceReadSignalp() const VL_MT_UNSAFE { return &m_forceReadSignal; }
+    std::pair<const VerilatedVar*, const VerilatedVar*> forceControlSignalps() const VL_MT_UNSAFE {
+        return {&(m_forceControlSignals.first), &(m_forceControlSignals.second)};
     }
 };
 

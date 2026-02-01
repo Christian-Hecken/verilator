@@ -11,6 +11,8 @@
 // returns it to the initial state.
 
 #include "verilated.h"  // For VL_PRINTF
+#include "verilated_sym_props.h"  // For VerilatedVar
+#include "verilated_syms.h"  // For VerilatedVarNameMap
 #include "verilated_vpi.h"  // For VerilatedVpi::doInertialPuts();
 
 #include "TestSimulator.h"  // For is_verilator()
@@ -32,12 +34,18 @@ using signalValueTypes = union {
     const struct t_vpi_vecval* vector;
 };
 
+using partialForceInfo = struct {
+    signalValueTypes value;
+    QData mask;  // __VforceEn mask. Is applied using vpi_put_value, which will cut off any
+                 // extraneous bits anyway, so the mask can be 64 bits for all cases
+};
+
 using TestSignal = const struct {
     const char* signalName;
     PLI_INT32 valueType;
     signalValueTypes releaseValue;
     signalValueTypes forceValue;
-    std::pair<signalValueTypes, bool>
+    std::pair<partialForceInfo, bool>
         partialForceValue;  // No std::optional on C++14, so the bool inside the pair is used to
                             // specify if a partial force should be tested for this signal. For a
                             // partial force, the first part of the signal is left at the release
@@ -54,14 +62,14 @@ constexpr std::array<TestSignal, 16> TestSignals = {
                vpiIntVal,
                {.integer = -1431655766},  // 1010...1010
                {.integer = 0x55555555},  // 0101...0101
-               {{.integer = -1431677611}, true}},  // 1010...010_010...0101
+               {{{.integer = -1431677611}, 0x0000FFFF}, true}},  // 1010...010_010...0101
 
     TestSignal{"vectorC",
                vpiVectorVal,
                // NOLINTBEGIN (cppcoreguidelines-avoid-c-arrays)
                {.vector = (t_vpi_vecval[]){{0b10101010, 0}}},
                {.vector = (t_vpi_vecval[]){{0b01010101, 0}}},
-               {{.vector = (t_vpi_vecval[]){{0b10100101, 0}}}, true}},
+               {{{.vector = (t_vpi_vecval[]){{0b10100101, 0}}}, 0b00001111}, true}},
     // NOLINTEND (cppcoreguidelines-avoid-c-arrays)
 
     TestSignal{
@@ -73,7 +81,8 @@ constexpr std::array<TestSignal, 16> TestSignals = {
         // NOLINTBEGIN (cppcoreguidelines-avoid-c-arrays)
         {.vector = (t_vpi_vecval[]){{0xAAAAAAAAUL, 0}, {0x2AAAAAAAUL, 0}}},  // (00)1010...1010
         {.vector = (t_vpi_vecval[]){{0x55555555UL, 0}, {0x15555555UL, 0}}},  // (00)0101...0101
-        {{.vector = (t_vpi_vecval[]){{0xD5555555UL, 0}, {0x2AAAAAAAUL, 0}}},
+        {{{.vector = (t_vpi_vecval[]){{0xD5555555UL, 0}, {0x2AAAAAAAUL, 0}}},
+          0x00000000'7FFFFFFFUL},
          true}},  // 1010...010_010...0101
     // NOLINTEND (cppcoreguidelines-avoid-c-arrays)
 
@@ -88,10 +97,11 @@ constexpr std::array<TestSignal, 16> TestSignals = {
                                            {0x55555555UL, 0},
                                            {0x55555555UL, 0},
                                            {0x55555555UL, 0}}},
-               {{.vector = (t_vpi_vecval[]){{0x55555555UL, 0},  // 1010...010_010...0101
-                                            {0x55555555UL, 0},
-                                            {0xAAAAAAAAUL, 0},
-                                            {0xAAAAAAAAUL, 0}}},
+               {{{.vector = (t_vpi_vecval[]){{0x55555555UL, 0},  // 1010...010_010...0101
+                                             {0x55555555UL, 0},
+                                             {0xAAAAAAAAUL, 0},
+                                             {0xAAAAAAAAUL, 0}}},
+                 0xFFFFFFFF'FFFFFFFFULL},
                 true}},
     // NOLINTEND (cppcoreguidelines-avoid-c-arrays)
 
@@ -102,54 +112,55 @@ constexpr std::array<TestSignal, 16> TestSignals = {
                {{}, false}},  // reals cannot be packed and individual bits cannot be accessed, so
                               // there is no way to partially force a real signal.
 
-    TestSignal{"textHalf", vpiStringVal, {.str = "Hf"}, {.str = "T2"}, {{.str = "H2"}, true}},
+    TestSignal{
+        "textHalf", vpiStringVal, {.str = "Hf"}, {.str = "T2"}, {{{.str = "H2"}, 0x00FF}, true}},
     TestSignal{"textLong",
                vpiStringVal,
                {.str = "Long64b"},
                {.str = "44Four44"},
-               {{.str = "Lonur44"}, true}},
+               {{{.str = "Lonur44"}, 0x00000000'FFFFFFFFUL}, true}},
     TestSignal{"text",
                vpiStringVal,
                {.str = "Verilog Test module"},
                {.str = "lorem ipsum"},
-               {{.str = "Verilog Tesem ipsum"}, true}},
+               {{{.str = "Verilog Tesem ipsum"}, 0xFFFFFFFF'FFFFFFFFULL}, true}},
 
     TestSignal{"binString",
                vpiBinStrVal,
                {.str = "10101010"},
                {.str = "01010101"},
-               {{.str = "10100101"}, true}},
+               {{{.str = "10100101"}, 0xF}, true}},
     TestSignal{"octString",
                vpiOctStrVal,
                {.str = "25252"},  // 010101010101010
                {.str = "52525"},  // 101010101010101
-               {{.str = "25325"}, true}},  // 010101011010101
+               {{{.str = "25325"}, 0b01111111}, true}},  // 010101011010101
     TestSignal{"hexString",
                vpiHexStrVal,
                {.str = "aaaaaaaaaaaaaaaa"},  // 1010...1010
                {.str = "5555555555555555"},  // 0101...0101
-               {{.str = "aaaaaaaa55555555"}, true}},  // 1010...010_010...0101
+               {{{.str = "aaaaaaaa55555555"}, 0xFFFFFFFF}, true}},  // 1010...010_010...0101
 
     TestSignal{"decStringC",
                vpiDecStrVal,
                {.str = "170"},  // 10101010
                {.str = "85"},  // 01010101
-               {{.str = "165"}, true}},  // 10100101
+               {{{.str = "165"}, 0xF}, true}},  // 10100101
     TestSignal{"decStringS",
                vpiDecStrVal,
                {.str = "43690"},  // 1010...1010
                {.str = "21845"},  // 0101...0101
-               {{.str = "43605"}, true}},  // 1010...010_010...0101
+               {{{.str = "43605"}, 0xFF}, true}},  // 1010...010_010...0101
     TestSignal{"decStringI",
                vpiDecStrVal,
                {.str = "2863311530"},  // 1010...1010
                {.str = "1431655765"},  // 0101...0101
-               {{.str = "2863289685"}, true}},  // 1010...010_010...0101
+               {{{.str = "2863289685"}, 0xFFFF}, true}},  // 1010...010_010...0101
     TestSignal{"decStringQ",
                vpiDecStrVal,
                {.str = "12297829382473034410"},  // 1010...1010
                {.str = "6148914691236517205"},  // 0101...0101
-               {{.str = "12297829381041378645"}, true}},  // 1010...010_010...0101
+               {{{.str = "12297829381041378645"}, 0xFFFFFFFF}, true}},  // 1010...010_010...0101
 };
 
 bool vpiCheckErrorLevel(const int maxAllowedErrorLevel) {
@@ -167,32 +178,6 @@ std::pair<const std::string, const bool> vpiGetErrorMessage() {
     const bool errorOccured = vpi_chk_error(&errorInfo);
     return {errorOccured ? errorInfo.message : std::string{}, errorOccured};
 }
-
-#ifdef VERILATOR
-int expectVpiPutError(const std::string& signalName, s_vpi_value value_s, const int flag,
-                      const std::string& expectedErrorMessage) {
-    const std::string fullSignalName = std::string{scopeName} + "." + signalName;
-    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
-        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(fullSignalName.c_str()), nullptr);
-    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
-
-    // Prevent program from terminating, so error message can be collected
-    Verilated::fatalOnVpiError(false);
-    vpi_put_value(signalHandle, &value_s, nullptr, flag);
-    // Re-enable so tests that should pass properly terminate the simulation on failure
-    Verilated::fatalOnVpiError(true);
-
-    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
-    const bool errorOccurred = receivedError.second;
-    const std::string receivedErrorMessage = receivedError.first;
-    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
-
-    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
-    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
-    return 0;
-}
-
-#endif
 
 bool vpiValuesEqual(const std::size_t bitCount, const s_vpi_value& first,
                     const s_vpi_value& second) {
@@ -250,6 +235,114 @@ std::unique_ptr<s_vpi_value> vpiValueWithFormat(const PLI_INT32 signalFormat,
     return value_sp;
 }
 
+#ifdef VERILATOR  // m_varsp is Verilator-specific and does not make sense for other simulators
+std::unique_ptr<const VerilatedVar> removeSignalFromScope(const std::string& scopeName,
+                                                          const std::string& signalName) {
+    const VerilatedScope* const scopep = Verilated::threadContextp()->scopeFind(scopeName.c_str());
+    if (!scopep) return nullptr;
+    VerilatedVarNameMap* const varsp = scopep->varsp();
+    const VerilatedVarNameMap::const_iterator foundSignalIt = varsp->find(signalName.c_str());
+    if (foundSignalIt == varsp->end()) return nullptr;
+    auto foundSignal = std::make_unique<const VerilatedVar>(foundSignalIt->second);
+    varsp->erase(foundSignalIt);
+    return foundSignal;
+}
+
+bool insertSignalIntoScope(const std::pair<std::string, std::string>& scopeAndSignalNames,
+                           const std::unique_ptr<const VerilatedVar> signal) {
+    const std::string& scopeName = scopeAndSignalNames.first;
+    const std::string& signalName = scopeAndSignalNames.second;
+
+    const VerilatedScope* const scopep = Verilated::threadContextp()->scopeFind(scopeName.c_str());
+    if (!scopep) return false;
+    VerilatedVarNameMap* const varsp = scopep->varsp();
+
+    // NOTE: The lifetime of the name inserted into varsp must be the same as the scopep, i.e. the
+    // same as threadContextp. Otherwise, the key in the m_varsp map will be a stale pointer.
+    // Hence, names of signals being inserted are stored in the static set, and it is assumed that
+    // the set's lifetime is the same as the threadContextp.
+    static std::set<std::string> insertedSignalNames;
+    const auto insertedSignalName = insertedSignalNames.insert(signalName);
+
+    varsp->insert(
+        std::pair<const char*, VerilatedVar>{insertedSignalName.first->c_str(), *signal});
+    return true;
+}
+
+// ForceableInfo contains independent copies of the control signals' VerilatedVar objects, so no
+// errors should occur even if the force control signals are removed from the scope's m_varsp
+int tryVpiGetWithMissingSignal(const TestVpiHandle& signalToGet, const std::string& scopeName,
+                               const std::string& signalNameToRemove, const PLI_INT32 signalFormat,
+                               const signalValueTypes expectedValue) {
+    std::unique_ptr<const VerilatedVar> removedSignal
+        = removeSignalFromScope(scopeName, signalNameToRemove);
+    CHECK_RESULT_NZ(removedSignal);  // NOLINT(concurrency-mt-unsafe)
+
+    std::unique_ptr<s_vpi_value> receivedValueSp = vpiValueWithFormat(signalFormat, {});
+    CHECK_RESULT_NZ(receivedValueSp);  // NOLINT(concurrency-mt-unsafe)
+    vpi_get_value(signalToGet, receivedValueSp.get());
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
+
+    const std::unique_ptr<s_vpi_value> expectedValueSp
+        = vpiValueWithFormat(signalFormat, expectedValue);
+    CHECK_RESULT_NZ(expectedValueSp);  // NOLINT(concurrency-mt-unsafe)
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(
+        vpiValuesEqual(vpi_get(vpiSize, signalToGet), *receivedValueSp, *expectedValueSp));
+
+    bool insertSuccess
+        = insertSignalIntoScope({scopeName, signalNameToRemove}, std::move(removedSignal));
+    CHECK_RESULT_NZ(insertSuccess);  // NOLINT(concurrency-mt-unsafe)
+    return 0;
+}
+
+int tryVpiPutWithMissingSignal(p_vpi_value value_sp, const TestVpiHandle& signalToPut,
+                               const int flag, const std::string& scopeName,
+                               const std::string& signalNameToRemove) {
+    std::unique_ptr<const VerilatedVar> removedSignal
+        = removeSignalFromScope(scopeName, signalNameToRemove);
+    CHECK_RESULT_NZ(removedSignal);  // NOLINT(concurrency-mt-unsafe)
+
+    vpi_put_value(signalToPut, value_sp, nullptr, flag);
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
+
+    bool insertSuccess
+        = insertSignalIntoScope({scopeName, signalNameToRemove}, std::move(removedSignal));
+    CHECK_RESULT_NZ(insertSuccess);  // NOLINT(concurrency-mt-unsafe)
+    return 0;
+}
+
+// Simpler function that expects an exact string instead of a number of substrings, and just a
+// signalName instead of a handle.
+int expectVpiPutError(const std::string& signalName, s_vpi_value value_s, const int flag,
+                      const std::string& expectedErrorMessage) {
+    const std::string fullSignalName = std::string{scopeName} + "." + signalName;
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(fullSignalName.c_str()), nullptr);
+    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
+
+    // Prevent program from terminating, so error message can be collected
+    Verilated::fatalOnVpiError(false);
+    vpi_put_value(signalHandle, &value_s, nullptr, flag);
+    // Re-enable so tests that should pass properly terminate the simulation on failure
+    Verilated::fatalOnVpiError(true);
+
+    std::pair<const std::string, const bool> receivedError = vpiGetErrorMessage();
+    const bool errorOccurred = receivedError.second;
+    const std::string receivedErrorMessage = receivedError.first;
+    CHECK_RESULT_NZ(errorOccurred);  // NOLINT(concurrency-mt-unsafe)
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe,performance-avoid-endl)
+    CHECK_RESULT(receivedErrorMessage, expectedErrorMessage);
+    return 0;
+}
+
+#endif
+
 int checkValue(const std::string& scopeName, const std::string& testSignalName,
                const PLI_INT32 signalFormat, const signalValueTypes expectedValue) {
     const std::string testSignalFullName
@@ -257,6 +350,16 @@ int checkValue(const std::string& scopeName, const std::string& testSignalName,
     TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
         = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalFullName.c_str()), nullptr);
     CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
+
+#ifdef VERILATOR
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
+        signalHandle, scopeName, testSignalName + "__VforceEn", signalFormat, expectedValue));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiGetWithMissingSignal(
+        signalHandle, scopeName, testSignalName + "__VforceVal", signalFormat, expectedValue));
+#endif
 
     std::unique_ptr<s_vpi_value> receivedValueSp = vpiValueWithFormat(signalFormat, {});
     CHECK_RESULT_NZ(receivedValueSp);  // NOLINT(concurrency-mt-unsafe)
@@ -286,6 +389,16 @@ int forceSignal(const std::string& scopeName, const std::string& testSignalName,
     std::unique_ptr<s_vpi_value> value_sp = vpiValueWithFormat(signalFormat, forceValue);
     CHECK_RESULT_NZ(value_sp);  // NOLINT(concurrency-mt-unsafe)
 
+#ifdef VERILATOR
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiForceFlag,
+                                              scopeName, testSignalName + "__VforceEn"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiForceFlag,
+                                              scopeName, testSignalName + "__VforceVal"));
+#endif
+
     vpi_put_value(signalHandle, value_sp.get(), nullptr, vpiForceFlag);
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
@@ -295,10 +408,9 @@ int forceSignal(const std::string& scopeName, const std::string& testSignalName,
 }
 
 int releaseSignal(const std::string& scopeName, const std::string& testSignalName,
-                  const PLI_INT32 signalFormat,
-                  const std::pair<signalValueTypes, signalValueTypes> releaseValue) {
-    const signalValueTypes expectedReleaseValueInit = releaseValue.first;
-    const signalValueTypes expectedReleaseValue = releaseValue.second;
+                  const PLI_INT32 signalFormat, const signalValueTypes forceValue,
+                  const signalValueTypes expectedReleaseValue,
+                  const signalValueTypes expectedReleaseValueInit) {
     const std::string testSignalFullName
         = std::string{scopeName} + "." + std::string{testSignalName};
     TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
@@ -312,10 +424,74 @@ int releaseSignal(const std::string& scopeName, const std::string& testSignalNam
         = vpiValueWithFormat(signalFormat, expectedReleaseValueInit);
     CHECK_RESULT_NZ(value_sp);  //NOLINT(concurrency-mt-unsafe)
 
+#ifdef XRUN
+    // Special case: real1Continuously is continuously assigned, but in xrun the value for the
+    // s_vpi_value output parameter upon releasing using vpi_put_value is *not* the releaseValue as
+    // expected, but the forceValue. This ifdef ensures the test still passes on xrun.
+    const std::unique_ptr<s_vpi_value> expectedValueSp = vpiValueWithFormat(
+        signalFormat, testSignalName == "real1Continuously" ? signalValueTypes{.real = 123456.789}
+                                                            : expectedReleaseValue);
+#else
+    const std::unique_ptr<s_vpi_value> expectedValueSp
+        = vpiValueWithFormat(signalFormat, expectedReleaseValue);
+#endif
+
+    CHECK_RESULT_NZ(expectedValueSp);  // NOLINT(concurrency-mt-unsafe)
+
+#ifdef VERILATOR
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiReleaseFlag,
+                                              scopeName, testSignalName + "__VforceEn"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
+
+    // Force it again, so that the release value is correct
+    value_sp = vpiValueWithFormat(signalFormat, forceValue);
+    vpi_put_value(signalHandle, value_sp.get(), nullptr, vpiForceFlag);
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiReleaseFlag,
+                                              scopeName, testSignalName + "__VforceVal"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
+
+    // Force it again, so that the release value is correct
+    value_sp = vpiValueWithFormat(signalFormat, forceValue);
+    vpi_put_value(signalHandle, value_sp.get(), nullptr, vpiForceFlag);
+#endif
+
     vpi_put_value(signalHandle, value_sp.get(), nullptr, vpiReleaseFlag);
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
+
+    return 0;
+}
+
+// The release test releases the signal several times to check correctness even when signals are
+// missing. For the correct output s_vpi_value, the signal must be re-forced in between, but VPI
+// does not support partial forcing, so this function needs to directly set the __VforceEn mask
+int releasePartiallyForcedSignal(const std::string& scopeName, const std::string& testSignalName,
+                                 const PLI_INT32 signalFormat, const signalValueTypes forceValue,
+                                 QData mask, const signalValueTypes expectedReleaseValue,
+                                 const signalValueTypes expectedReleaseValueInit) {
+    const std::string testSignalFullName
+        = std::string{scopeName} + "." + std::string{testSignalName};
+    TestVpiHandle const signalHandle  //NOLINT(misc-misplaced-const)
+        = vpi_handle_by_name(const_cast<PLI_BYTE8*>(testSignalFullName.c_str()), nullptr);
+    CHECK_RESULT_NZ(signalHandle);  // NOLINT(concurrency-mt-unsafe)
+
+    // initialize value_sp to the value that is *not* expected (i.e. forceValue for continuously
+    // assigned signals, and releaseValue for clocked signals) to ensure the test fails if value_sp
+    // is not updated
+    std::unique_ptr<s_vpi_value> value_sp
+        = vpiValueWithFormat(signalFormat, expectedReleaseValueInit);
+    CHECK_RESULT_NZ(value_sp);  //NOLINT(concurrency-mt-unsafe)
 
 #ifdef XRUN
     // Special case: real1Continuously is continuously assigned, but in xrun the value for the
@@ -328,7 +504,42 @@ int releaseSignal(const std::string& scopeName, const std::string& testSignalNam
     const std::unique_ptr<s_vpi_value> expectedValueSp
         = vpiValueWithFormat(signalFormat, expectedReleaseValue);
 #endif
+
     CHECK_RESULT_NZ(expectedValueSp);  // NOLINT(concurrency-mt-unsafe)
+
+#ifdef VERILATOR
+    const std::string forceEnableSignalName = testSignalName + "__VforceEn";
+    t_vpi_vecval mask_vector[] = {{static_cast<PLI_UINT32>(mask & 0xFFFFFFFFUL), 0},
+                                  {static_cast<PLI_UINT32>((mask >> 32) & 0xFFFFFFFFUL), 0}};
+    s_vpi_value mask_value_s{.format = vpiVectorVal, .value{.vector = mask_vector}};
+    TestVpiHandle forceEnableSignalHandle = vpi_handle_by_name(
+        const_cast<PLI_BYTE8*>(std::string{testSignalFullName + "__VforceEn"}.c_str()), nullptr);
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiReleaseFlag,
+                                              scopeName, testSignalName + "__VforceEn"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
+
+    // Force it again, so that the release value is correct
+    vpi_put_value(forceEnableSignalHandle, &mask_value_s, nullptr, vpiNoDelay);
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(tryVpiPutWithMissingSignal(value_sp.get(), signalHandle, vpiReleaseFlag,
+                                              scopeName, testSignalName + "__VforceVal"));
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
+
+    // Force it again, so that the release value is correct
+    vpi_put_value(forceEnableSignalHandle, &mask_value_s, nullptr, vpiNoDelay);
+#endif
+
+    vpi_put_value(signalHandle, value_sp.get(), nullptr, vpiReleaseFlag);
+
+    // NOLINTNEXTLINE(concurrency-mt-unsafe)
+    CHECK_RESULT_Z(vpiCheckErrorLevel(maxAllowedErrorLevel))
 
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
     CHECK_RESULT_NZ(vpiValuesEqual(vpi_get(vpiSize, signalHandle), *value_sp, *expectedValueSp));
@@ -367,7 +578,7 @@ extern "C" int checkValuesPartiallyForced(void) {
             if (signal.partialForceValue.second)
                 CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
                     checkValue(scopeName, signal.signalName, signal.valueType,
-                               signal.partialForceValue.first));
+                               signal.partialForceValue.first.value));
             return 0;
         }));
 
@@ -377,7 +588,7 @@ extern "C" int checkValuesPartiallyForced(void) {
             if (signal.partialForceValue.second)
                 CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
                     checkValue(scopeName, std::string{signal.signalName} + "Continuously",
-                               signal.valueType, signal.partialForceValue.first));
+                               signal.valueType, signal.partialForceValue.first.value));
             return 0;
         }));
     return 0;
@@ -573,8 +784,8 @@ extern "C" int releaseValues(void) {
     CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
         std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
             CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-                releaseSignal(scopeName, signal.signalName, signal.valueType,
-                              {signal.releaseValue, signal.forceValue}));
+                releaseSignal(scopeName, signal.signalName, signal.valueType, signal.forceValue,
+                              signal.forceValue, signal.releaseValue));
             return 0;
         }));
 
@@ -583,7 +794,8 @@ extern "C" int releaseValues(void) {
         std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
             CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
                 releaseSignal(scopeName, std::string{signal.signalName} + "Continuously",
-                              signal.valueType, {signal.forceValue, signal.releaseValue}));
+                              signal.valueType, signal.forceValue, signal.releaseValue,
+                              signal.forceValue));
             return 0;
         }));
     return 0;
@@ -600,8 +812,10 @@ extern "C" int releasePartiallyForcedValues(void) {
         std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
             if (signal.partialForceValue.second)
                 CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-                    releaseSignal(scopeName, signal.signalName, signal.valueType,
-                                  {signal.releaseValue, signal.partialForceValue.first}));
+                    releasePartiallyForcedSignal(
+                        scopeName, signal.signalName, signal.valueType,
+                        signal.partialForceValue.first.value, signal.partialForceValue.first.mask,
+                        signal.partialForceValue.first.value, signal.releaseValue));
             return 0;
         }));
 
@@ -610,9 +824,11 @@ extern "C" int releasePartiallyForcedValues(void) {
         std::any_of(TestSignals.begin(), TestSignals.end(), [](const TestSignal& signal) {
             if (signal.partialForceValue.second)
                 CHECK_RESULT_Z(  // NOLINT(concurrency-mt-unsafe)
-                    releaseSignal(scopeName, std::string{signal.signalName} + "Continuously",
-                                  signal.valueType,
-                                  {signal.partialForceValue.first, signal.releaseValue}));
+                    releasePartiallyForcedSignal(
+                        scopeName, std::string{signal.signalName} + "Continuously",
+                        signal.valueType, signal.partialForceValue.first.value,
+                        signal.partialForceValue.first.mask, signal.releaseValue,
+                        signal.partialForceValue.first.value));
             return 0;
         }));
     return 0;

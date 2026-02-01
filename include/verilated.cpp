@@ -3521,9 +3521,9 @@ void VerilatedScope::exportInsert(int finalize, const char* namep, void* cb) VL_
     }
 }
 
-VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
-                                        VerilatedVarType vltype, int vlflags, int udims,
-                                        int pdims...) VL_MT_UNSAFE {
+VerilatedVar VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
+                                       VerilatedVarType vltype, int vlflags, int udims,
+                                       int pdims...) VL_MT_UNSAFE {
     // Grab dimensions
     // In the future we may just create a large table at emit time and
     // statically construct from that.
@@ -3548,14 +3548,14 @@ VerilatedVar* VerilatedScope::varInsert(const char* namep, void* datap, bool isP
     }
     va_end(ap);
 
-    m_varsp->emplace(namep, std::move(var));
-    return &(m_varsp->find(namep)->second);
+    m_varsp->emplace(namep, var);
+    return var;
 }
 
-VerilatedVar* VerilatedScope::forceableVarInsert(
+VerilatedVar VerilatedScope::forceableVarInsert(
     const char* namep, void* datap, bool isParam, VerilatedVarType vltype, int vlflags,
     bool isContinuously, void* forceReadSignalData, const char* const forceReadSignalName,
-    std::pair<VerilatedVar*, VerilatedVar*> forceControlSignals, int udims,
+    std::pair<VerilatedVar, VerilatedVar> forceControlSignals, int udims,
     int pdims...) VL_MT_UNSAFE {
     if (!m_varsp) m_varsp = new VerilatedVarNameMap;
 
@@ -3588,8 +3588,8 @@ VerilatedVar* VerilatedScope::forceableVarInsert(
     }
     va_end(ap);
 
-    std::unique_ptr<ForceableInfo> forceableInfop
-        = std::make_unique<ForceableInfo>(forceControlSignals, std::move(forceReadSignal));
+    std::shared_ptr<ForceableInfo> forceableInfop
+        = std::make_shared<ForceableInfo>(forceControlSignals, std::move(forceReadSignal));
 
     VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
                      isParam, std::move(forceableInfop));
@@ -3606,8 +3606,8 @@ VerilatedVar* VerilatedScope::forceableVarInsert(
     }
     va_end(ap);
 
-    m_varsp->emplace(namep, std::move(var));
-    return &(m_varsp->find(namep)->second);
+    m_varsp->emplace(namep, var);
+    return var;
 }
 
 // cppcheck-suppress unusedFunction  // Used by applications

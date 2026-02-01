@@ -2761,7 +2761,7 @@ void vpi_get_value(vpiHandle object, p_vpi_value valuep) {
         const std::unique_ptr<const VerilatedVpioVar> forceReadSignalVpioVarp
             = baseSignalVop->varp()->isForceable()
                   ? std::make_unique<const VerilatedVpioVar>(
-                        baseSignalVop->varp()->forceableInfo()->forceReadSignal(),
+                        baseSignalVop->varp()->forceableInfo()->forceReadSignalp(),
                         baseSignalVop->scopep())  // Same scope as base signal
                   : nullptr;
         // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const, and
@@ -2859,7 +2859,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                                 forceControlSignals.second,
                                 baseSignalVop->scopep()  // Same scope as base signal
                                 )};
-                    }(baseSignalVop->varp()->forceableInfo()->forceControlSignals())
+                    }(baseSignalVop->varp()->forceableInfo()->forceControlSignalps())
                   : std::pair<std::unique_ptr<const VerilatedVpioVar>, std::unique_ptr<const VerilatedVpioVar>>{nullptr, nullptr};
         const auto& forceEnableSignalVop = forceControlSignalVops.first;
         const auto& forceValueSignalVop = forceControlSignalVops.second;
@@ -2924,7 +2924,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                 const std::unique_ptr<const VerilatedVpioVar> forceReadSignalVop
                     = baseSignalVop->varp()->isForceable()
                           ? std::make_unique<const VerilatedVpioVar>(
-                                baseSignalVop->varp()->forceableInfo()->forceReadSignal(),
+                                baseSignalVop->varp()->forceableInfo()->forceReadSignalp(),
                                 baseSignalVop->scopep())  // Same scope as base signal
                           : nullptr;
                 // LCOV_EXCL_START - Cannot test, because VerilatedVar's m_forceableInfo is const,
