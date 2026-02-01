@@ -6,10 +6,10 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
-// can redistribute it and/or modify it under the terms of either the GNU
-// Lesser General Public License Version 3 or the Perl Artistic License
-// Version 2.0.
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2003-2026 Wilson Snyder
 // SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 //
 //*************************************************************************
@@ -1397,9 +1397,9 @@ port<nodep>:                    // ==IEEE: port
         //                      // IEEE: ansi_port_declaration, with [port_direction] removed
         //                      //   IEEE: [ net_port_header | interface_port_header ]
         //                      //         port_identifier { unpacked_dimension } [ '=' constant_expression ]
-        //                      //   IEEE: [ net_port_header | variable_port_header ] '.' port_identifier '(' [ expression ] ')'
         //                      //   IEEE: [ variable_port_header ] port_identifier
         //                      //              { variable_dimension } [ '=' constant_expression ]
+        //                      //   IEEE: '.' port_identifier '(' [ expression ] ')'
         //                      //   Substitute net_port_header = [ port_direction ] net_port_type
         //                      //   Substitute variable_port_header = [ port_direction ] variable_port_type
         //                      //   Substitute net_port_type = [ net_type ] data_type_or_implicit
@@ -1474,6 +1474,13 @@ port<nodep>:                    // ==IEEE: port
         |       portDirNetE /*implicit*/        portSig variable_dimensionListE sigAttrListE '=' constExpr
                         { $$ = $2; /*VARDTYPE-same*/
                           if (AstVar* vp = VARDONEP($$, $3, $4)) { addNextNull($$, vp); vp->valuep($6); } }
+        //                      //   IEEE: '.' port_identifier '(' [ expression ] ')'
+        |       portDirNetE /*implicit*/ '.' portSig '(' expr ')'
+                        { $$ = $3; DEL($5);
+                          BBUNSUP($<fl>2, "Unsupported: complex ports (IEEE 1800-2017 23.2.2.1/2)"); }
+        //                      // IEEE: part of (non-ansi) port_reference
+        |       '{' port_expressionList '}'
+                        { $$ = $2; }
         ;
 
 portDirNetE:                    // IEEE: part of port, optional net type and/or direction
@@ -1495,6 +1502,18 @@ portSig<nodep>:
                         { $$ = new AstPort{$<fl>1, PINNUMINC(), *$1}; }
         |       idSVKwd
                         { $$ = new AstPort{$<fl>1, PINNUMINC(), *$1}; }
+        ;
+
+port_expressionList<nodep>:  // IEEE: part of (non-ansi) port_reference
+                port_reference                          { $$ = $1; }
+        |       port_expressionList ',' port_reference  { $$ = addNextNull($1, $3); }
+        ;
+
+port_reference<nodep>:  // IEEE: (non-ansi) port-reference
+        //                      // IEEE: port_identifier constant_select
+        //                      // constant_select ::= [ '[' constant_part_select_range ']' ]
+                id/*port_identifier*/                   { $$ = nullptr; }  // UNSUP above here
+        |       id/*port_identifier*/ part_select_range  { $$ = nullptr; DEL($2); }  // UNSUP above here
         ;
 
 //**********************************************************************
@@ -3517,7 +3536,7 @@ stmtList<nodeStmtp>:
         |       stmtList error ';'                      { $$ = $1; }  // LCOV_EXCL_LINE
         ;
 
-stmt<nodeStmtp>:                    // IEEE: statement + seq_block + par_block
+stmt<nodeStmtp>:                    // IEEE: statement + statement_or_null + seq_block + par_block
                 statement_item                          { $$ = $1; }
         //                      // S05 block creation rule
         |       id/*block_identifier*/ ':' statement_item       { $$ = new AstBegin{$<fl>1, *$1, $3, false}; }
@@ -6609,27 +6628,7 @@ property_spec<propSpecp>:               // IEEE: property_spec
         |       pexpr                                   { $$ = new AstPropSpec{$1->fileline(), nullptr, nullptr, $1}; }
         ;
 
-//UNSUPproperty_statement_spec<nodep>:  // ==IEEE: property_statement_spec
-//UNSUP //                      // IEEE: [ clocking_event ] [ yDISABLE yIFF '(' expression_or_dist ')' ] property_statement
-//UNSUP         property_statement                      { $$ = $1; }
-//UNSUP |       yDISABLE yIFF '(' expr/*expression_or_dist*/ ')' property_statement     { }
-//UNSUP //                      // IEEE: clocking_event property_statement
-//UNSUP //                      // IEEE: clocking_event yDISABLE yIFF '(' expr/*expression_or_dist*/ ')' property_statement
-//UNSUP //                      // Both overlap pexpr:"clocking_event pexpr"  the difference is
-//UNSUP //                      // property_statement:property_statementCaseIf so replicate it
-//UNSUP |       clocking_event property_statementCaseIf { }
-//UNSUP |       clocking_event yDISABLE yIFF '(' expr/*expression_or_dist*/ ')' property_statementCaseIf        { }
-//UNSUP ;
-
-//UNSUPproperty_statement<nodep>:  // ==IEEE: property_statement
-//UNSUP //                      // Doesn't make sense to have "pexpr ;" in pexpr rule itself, so we split out case/if
-//UNSUP         pexpr ';'                               { $$ = $1; }
-//UNSUP //                      // Note this term replicated in property_statement_spec
-//UNSUP //                      // If committee adds terms, they may need to be there too.
-//UNSUP |       property_statementCaseIf                { $$ = $1; }
-//UNSUP ;
-
-property_statementCaseIf<nodeExprp>:  // IEEE: property_statement - minus pexpr
+property_exprCaseIf<nodeExprp>:  // IEEE: part of property_expr for if/case
                 yCASE '(' expr/*expression_or_dist*/ ')' property_case_itemList yENDCASE
                         { $$ = new AstConst{$1, AstConst::BitFalse{}};
                           BBUNSUP($<fl>1, "Unsupported: property case expression");
@@ -6710,7 +6709,7 @@ pexpr<nodeExprp>:  // IEEE: property_expr  (The name pexpr is important as regex
         //
         //                      // IEEE-2009: property_statement
         //                      // IEEE-2012: yIF and yCASE
-        |       property_statementCaseIf                { $$ = $1; }
+        |       property_exprCaseIf                     { $$ = $1; }
         //
         |       ~o~pexpr/*sexpr*/ yP_POUNDMINUSPD pexpr
                         { $$ = $1; BBUNSUP($2, "Unsupported: #-# (in property expression)"); DEL($3); }
@@ -6765,7 +6764,8 @@ pexpr<nodeExprp>:  // IEEE: property_expr  (The name pexpr is important as regex
         //                      // property_statement_spec: clocking_event property_statement
         //
         //                      // Include property_specDisable to match property_spec rule
-        //UNSUP clocking_event yDISABLE yIFF '(' expr ')' pexpr %prec prSEQ_CLOCKING    { }
+        //UNSUP clocking_event ~p~sexpr %prec prSEQ_CLOCKING
+        //UNSUP         { $$ = $2; BBUNSUP($2, "Unsupported: clocking event (in sequence expression)"); DEL($1); }
         //
         //============= sexpr rules copied for property_expr
         |       BISONPRE_COPY_ONCE(sexpr,{s/~p~s/p/g; })        // {copied}
@@ -7033,6 +7033,8 @@ bins_or_options<nodep>:  // ==IEEE: bins_or_options
                         { $$ = nullptr; BBCOVERIGN($<fl>4, "Ignoring unsupported: cover bin specification"); DEL($3, $6, $8); }
         |       bins_keyword idAny/*bin_identifier*/ bins_orBraE '=' '{' range_list '}' yWITH__PAREN '(' cgexpr ')' iffE
                         { $$ = nullptr; BBCOVERIGN($<fl>8, "Ignoring unsupported: cover bin 'with' specification"); DEL($3, $6, $10, $12); }
+        |       bins_keyword idAny/*bin_identifier*/ bins_orBraE '=' id/*cover_point_id*/ yWITH__PAREN '(' cgexpr ')' iffE
+                        { $$ = nullptr; BBCOVERIGN($<fl>6, "Ignoring unsupported: cover bin 'with' specification"); DEL($3, $8, $10); }
         |       yWILDCARD bins_keyword idAny/*bin_identifier*/ bins_orBraE '=' '{' range_list '}' iffE
                         { $$ = nullptr; BBCOVERIGN($<fl>5, "Ignoring unsupported: cover bin 'wildcard' specification"); DEL($4, $7, $9); }
         |       yWILDCARD bins_keyword idAny/*bin_identifier*/ bins_orBraE '=' '{' range_list '}' yWITH__PAREN '(' cgexpr ')' iffE

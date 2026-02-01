@@ -6,10 +6,10 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
-// can redistribute it and/or modify it under the terms of either the GNU
-// Lesser General Public License Version 3 or the Perl Artistic License
-// Version 2.0.
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2003-2026 Wilson Snyder
 // SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 //
 //*************************************************************************
@@ -35,6 +35,7 @@
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, FOLD_UNARY) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, INLINE_ARRAYSEL_SPLICE) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, INLINE_ARRAYSEL_UNIT) \
+    _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, NARROW_CONCAT) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PULL_NOTS_THROUGH_COND) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_BITWISE_OP_THROUGH_CONCAT) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_BITWISE_THROUGH_REDUCTION) \
@@ -43,7 +44,6 @@
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_NOT_THROUGH_COND) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_REDUCTION_THROUGH_CONCAT) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_REDUCTION_THROUGH_COND_WITH_CONST_BRANCH) \
-    _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_SEL_THROUGH_CONCAT) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_SEL_THROUGH_COND) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_SEL_THROUGH_NOT) \
     _FOR_EACH_DFG_PEEPHOLE_OPTIMIZATION_APPLY(macro, PUSH_SEL_THROUGH_REPLICATE) \

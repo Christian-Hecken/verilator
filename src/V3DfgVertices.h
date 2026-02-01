@@ -6,10 +6,10 @@
 //
 //*************************************************************************
 //
-// Copyright 2003-2026 by Wilson Snyder. This program is free software; you
-// can redistribute it and/or modify it under the terms of either the GNU
-// Lesser General Public License Version 3 or the Perl Artistic License
-// Version 2.0.
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2003-2026 Wilson Snyder
 // SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 //
 //*************************************************************************
@@ -139,6 +139,14 @@ public:
     bool hasExtRdRefs() const { return hasExtRdRefs(nodep()); }
     bool hasExtWrRefs() const { return hasExtWrRefs(nodep()); }
     bool hasExtRefs() const { return hasExtRdRefs() || hasExtWrRefs(); }
+
+    // True iff the value of this variable is read outside this DfgGraph
+    bool isObserved() const {
+        // A DfgVarVertex is written in exactly one DfgGraph, and might be read in an arbitrary
+        // number of other DfgGraphs. If it's driven in this DfgGraph, it's read in others.
+        if (hasDfgRefs()) return srcp() || defaultp();
+        return hasExtRdRefs() || hasModRdRefs();
+    }
 
     // The value of this vertex might differ from what is defined by its drivers
     // 'srcp' and 'defaultp'. That is, it might be assigned, possibly partially,

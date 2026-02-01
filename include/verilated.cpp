@@ -3,10 +3,10 @@
 //
 // Code available from: https://verilator.org
 //
-// Copyright 2003-2026 by Wilson Snyder. This program is free software; you can
-// redistribute it and/or modify it under the terms of either the GNU
-// Lesser General Public License Version 3 or the Perl Artistic License
-// Version 2.0.
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2003-2026 Wilson Snyder
 // SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
 //
 //=========================================================================
@@ -2819,6 +2819,7 @@ void VerilatedContext::threads(unsigned n) {
             "%Error: Cannot set simulation threads after the thread pool has been created.");
     }
 
+    m_useNumaAssign = true;
     if (m_threads == n) return;  // To avoid unnecessary warnings
     m_threads = n;
     const unsigned threadsAvailableToProcess = VlOs::getProcessDefaultParallelism();
@@ -2828,6 +2829,8 @@ void VerilatedContext::threads(unsigned n) {
                      threadsAvailableToProcess, m_threads);
     }
 }
+
+void VerilatedContext::useNumaAssign(bool flag) { m_useNumaAssign = flag; }
 
 void VerilatedContext::commandArgs(int argc, const char** argv) VL_MT_SAFE_EXCLUDES(m_argMutex) {
     // Not locking m_argMutex here, it is done in impp()->commandArgsAddGuts

@@ -1,7 +1,7 @@
 // DESCRIPTION: Verilator: Verilog Test module
 //
-// This file ONLY is placed under the Creative Commons Public Domain, for
-// any use, without warranty, 2022 by Geza Lore.
+// This file ONLY is placed under the Creative Commons Public Domain.
+// SPDX-FileCopyrightText: 2022 Geza Lore
 // SPDX-License-Identifier: CC0-1.0
 
 `define signal(name, expr) wire [$bits(expr)-1:0] ``name = expr
@@ -263,6 +263,12 @@ module t (
    wire [63:0] sel_from_not_tmp = ~(rand_a >> rand_b[2:0] << rand_a[3:0]);
    wire        sel_from_not = sel_from_not_tmp[2];
    always @(posedge randbit_a) if ($c(0)) $display(sel_from_not); // Do not remove signal
+
+   // Narrow concatenation
+   wire [9:0] narrow_concat = {5'd0, ~rand_a[44 +: 5]};
+   `signal(NARROW_CONCAT_A, narrow_concat[5:1]);
+   `signal(NARROW_CONCAT_B, narrow_concat[8:4]);
+   `signal(NARROW_CONCAT_C, narrow_concat[5:4]);
 
    // Assigned at the end to avoid inlining by other passes
    assign const_a  = 64'h0123456789abcdef;
