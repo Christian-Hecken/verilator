@@ -2497,11 +2497,45 @@ void vpi_get_delays(vpiHandle /*object*/, p_vpi_delay /*delay_p*/) { VL_VPI_UNIM
 void vpi_put_delays(vpiHandle /*object*/, p_vpi_delay /*delay_p*/) { VL_VPI_UNIMP_(); }
 
 // value processing
-bool vl_check_format(const VerilatedVar* varp, const p_vpi_value valuep, const char* fullname,
-                     bool isGetValue) {
+bool vl_check_format(const VerilatedVpioVarBase* vop, const p_vpi_value valuep,
+                     const char* fullname, bool isGetValue) {
+    const VerilatedVar* varp = vop->varp();
     bool status = true;
-    if ((valuep->format == vpiVectorVal) || (valuep->format == vpiBinStrVal)
-        || (valuep->format == vpiOctStrVal) || (valuep->format == vpiHexStrVal)) {
+
+    if (valuep->format == vpiObjTypeVal) {
+        if (varp->vltype() == VLVT_UINT8 && vop->bitSize() == 1) {
+            VL_VPI_WARNING_(__FILE__, __LINE__,
+                            "Signal '%s' has 1 bit, but Verilator does not support"
+                            " 'vpiScalarVal'. Falling back to 'vpiVectorVal'.",
+                            fullname);
+        }
+        switch (varp->vltype()) {
+        case VLVT_REAL:
+            valuep->format = vpiRealVal;
+            return status;
+            break;
+        case VLVT_UINT8:
+        case VLVT_UINT16:
+        case VLVT_UINT32:
+            // No way to know if 32-bit packed vector or integer. Fall back to vpiVectorVal.
+        case VLVT_UINT64:
+        case VLVT_WDATA:
+            valuep->format = vpiVectorVal;
+            return status;
+            break;
+        case VLVT_STRING:
+            VL_VPI_WARNING_(
+                __FILE__, __LINE__,
+                "Signal '%s' has type VLVT_STRING, but s_vpi_value format 'vpiObjTypeVal' is not "
+                "specified for strings in SystemVerilog standard. Falling back to 'vpiStringVal'.",
+                fullname);
+            valuep->format = vpiStringVal;
+            return status;
+            break;
+        default: status = false;  // LCOV_EXCL_LINE
+        }
+    } else if ((valuep->format == vpiVectorVal) || (valuep->format == vpiBinStrVal)
+               || (valuep->format == vpiOctStrVal) || (valuep->format == vpiHexStrVal)) {
         switch (varp->vltype()) {
         case VLVT_UINT8:
         case VLVT_UINT16:
@@ -2707,7 +2741,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     void* const varDatap = vop->varDatap();
     const char* fullname = vop->fullname();
 
-    if (!vl_check_format(varp, valuep, fullname, true)) return;
+    if (!vl_check_format(vop, valuep, fullname, true)) return;
     // string data type is dynamic and may vary in size during simulation
     static thread_local std::string t_outDynamicStr;
 
@@ -2955,7 +2989,7 @@ vpiHandle vpi_put_value(vpiHandle object, p_vpi_value valuep, p_vpi_time /*time_
                           baseSignalVop->fullname());
             return nullptr;
         }
-        if (!vl_check_format(baseSignalVop->varp(), valuep, baseSignalVop->fullname(), false))
+        if (!vl_check_format(baseSignalVop, valuep, baseSignalVop->fullname(), false))
             return nullptr;
         if (delay_mode == vpiInertialDelay) {
             if (!VerilatedVpiPutHolder::canInertialDelay(valuep)) {

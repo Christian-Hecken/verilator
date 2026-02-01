@@ -26,6 +26,8 @@ for s in [
         'Expecting define formal arguments. Found:',  # Instead define syntax error
         'Syntax error: Range \':\', \'+:\' etc are not allowed in the instance',  # Instead get syntax error
         'dynamic new() not expected in this context (expected under an assign)',  # Instead get syntax error
+        'Signal \'%s\' has 1 bit, but Verilator does not support',  # Checked in t_vpi_var.out
+        'Signal \'%s\' has type VLVT_STRING, but s_vpi_value format \'vpiObjTypeVal\' is not',  # Checked in t_vpi_var.out
         # Not yet analyzed
         '$VERILATOR_ROOT needs to be in environment',
         '--pipe-filter protocol error, unexpected:',

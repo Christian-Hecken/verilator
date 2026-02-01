@@ -1,0 +1,2 @@
+Signal 't.onebit' has 1 bit, but Verilator does not support 'vpiScalarVal'. Falling back to 'vpiVectorVal'.Signal 't.str1' has type VLVT_STRING, but s_vpi_value format 'vpiObjTypeVal' is not specified for strings in SystemVerilog standard. Falling back to 'vpiStringVal'.%Info: Checking results
+*-* All Finished *-*

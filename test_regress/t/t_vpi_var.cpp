@@ -9,6 +9,10 @@
 //
 //*************************************************************************
 
+#include "vpi_user.h"
+
+#include <array>
+#include <cstdint>
 #ifdef IS_VPI
 
 #include "sv_vpi_user.h"
@@ -722,6 +726,141 @@ int _mon_check_getput_iter() {
     return 0;
 }
 
+template <std::size_t N>
+void fillAvalsWithString(std::array<uint32_t, N>& avals, const std::string& str) {
+    avals.fill(0);
+    const std::size_t num_bytes = std::min(avals.size() * 4, str.length());
+    // Little Endian
+    for (std::size_t i = 0; i < num_bytes; ++i) {
+        const std::size_t word_index = i / 4;
+        const std::size_t byte_offset = i % 4;
+        avals[word_index] |= static_cast<uint32_t>(static_cast<uint8_t>(str[str.length() - i - 1]))
+                             << (byte_offset * 8);
+    }
+}
+
+int _mon_check_objtypeval() {
+    s_vpi_value v;
+    TestVpiHandle h;
+
+    // VLVT_UINT* -> vpiVectorVal
+    // Currently no way to distinguish packed vector from integer at runtime, so all packed vectors
+    // fall back to vpiVectorVal. vpiScalarVal is not supported, so that also falls back to
+    // vpiVectorVal.
+
+    // VLVT_UINT8
+    h = VPI_HANDLE("onebit");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+#ifdef VERILATOR
+    CHECK_RESULT(v.format, vpiVectorVal);
+    CHECK_RESULT(v.value.vector[0].aval, 1);
+#else
+    CHECK_RESULT(v.format, vpiScalarVal);
+    CHECK_RESULT(v.value.scalar, vpi1);
+#endif
+
+    // VLVT_UINT8 - unknown if packed vector or 'byte' type, falls back to vpiVectorVal
+    h = VPI_HANDLE("byte1");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+#ifdef VERILATOR
+    CHECK_RESULT(v.format, vpiVectorVal);
+    CHECK_RESULT(v.value.vector[0].aval, 123);
+#else
+    CHECK_RESULT(v.format, vpiIntVal);
+    CHECK_RESULT(v.value.integer, 123);
+#endif
+
+    // VLVT_UINT16
+    h = VPI_HANDLE("text_half");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+    CHECK_RESULT(v.format, vpiVectorVal);
+    CHECK_RESULT(v.value.vector[0].aval, 'H' << 8 | 'f');
+
+    // VLVT_UINT32 - unknown if packed vector or integer, falls back to vpiVectorVal
+    h = VPI_HANDLE("int1");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+#ifdef VERILATOR
+    CHECK_RESULT(v.format, vpiVectorVal);
+    CHECK_RESULT(v.value.vector[0].aval, 123);
+#else
+    CHECK_RESULT(v.format, vpiIntVal);
+    CHECK_RESULT(v.value.integer, 123);
+#endif
+
+    // VLVT_REAL -> vpiRealVal
+    h = VPI_HANDLE("real1");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+    CHECK_RESULT(v.format, vpiRealVal);
+    TEST_CHECK_REAL_EQ(v.value.real, 123456.789, 0.0005);
+
+    // VLVT_STRING - undefined by the standard, Verilator uses vpiStringVal
+#ifdef VERILATOR
+    h = VPI_HANDLE("str1");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    // Warning is checked in .out file
+    vpi_get_value(h, &v);
+
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+    CHECK_RESULT(v.format, vpiStringVal);
+    CHECK_RESULT_CSTR(v.value.str, "something a lot longer than hello");
+#endif
+
+    // VLVT_UINT64 - unknown if packed vector or integer, falls back to vpiVectorVal
+    h = VPI_HANDLE("long1");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+#ifdef VERILATOR
+    CHECK_RESULT(v.format, vpiVectorVal);
+    CHECK_RESULT(v.value.vector[0].aval, 123);
+#else
+    CHECK_RESULT(v.format, vpiIntVal);
+    CHECK_RESULT(v.value.integer, 123);
+#endif
+
+    // VLVT_WDATA -> vpiVectorVal
+    std::array<uint32_t, 512 / 32> expectedAvals;
+    fillAvalsWithString<512 / 32>(expectedAvals, "Verilog Test module");
+
+    h = VPI_HANDLE("text");
+    CHECK_RESULT_NZ(h);
+
+    v.format = vpiObjTypeVal;
+    vpi_get_value(h, &v);
+    CHECK_RESULT_Z(vpi_chk_error(nullptr));
+    CHECK_RESULT(v.format, vpiVectorVal);
+    for (int i = 0; i < 512 / 32; ++i) {
+        CHECK_RESULT(v.value.vector[i].aval, expectedAvals[i]);
+        CHECK_RESULT(v.value.vector[i].bval, 0);
+    }
+
+    return errors;
+}
+
 int _mon_check_quad() {
     TestVpiHandle vh2 = VPI_HANDLE("quads");
     CHECK_RESULT_NZ(vh2);
@@ -809,16 +948,6 @@ int _mon_check_delayed() {
     v.value.vector = nullptr;
     vpi_put_value(vh, &v, &t, vpiInertialDelay);
     CHECK_RESULT_NZ(vpi_chk_error(nullptr));
-
-    // This format throws an error now
-#ifdef VERILATOR
-    Verilated::fatalOnVpiError(false);
-#endif
-    v.format = vpiObjTypeVal;
-    vpi_put_value(vh, &v, &t, vpiInertialDelay);
-#ifdef VERILATOR
-    Verilated::fatalOnVpiError(true);
-#endif
 
     return 0;
 }
@@ -1029,6 +1158,7 @@ extern "C" int mon_check() {
     if (int status = _mon_check_getput()) return status;
     if (int status = _mon_check_getput_iter()) return status;
     if (int status = _mon_check_quad()) return status;
+    if (int status = _mon_check_objtypeval()) return status;
     if (int status = _mon_check_string()) return status;
     if (int status = _mon_check_putget_str(NULL)) return status;
     if (int status = _mon_check_vlog_info()) return status;
