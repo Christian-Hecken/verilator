@@ -1,0 +1,89 @@
+`verilator_config
+forceable -module "t" -var "onebit"
+forceable -module "t" -var "twoone"
+// forceable -module "t" -var "LONGSTART_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_a_very_long_name_which_will_get_hashed_LONGEND"
+forceable -module "t" -var "rev"
+forceable -module "t" -var "count"
+forceable -module "t" -var "half_count"
+forceable -module "t" -var "delayed"
+forceable -module "t" -var "text_byte"
+forceable -module "t" -var "text_half"
+forceable -module "t" -var "text_word"
+forceable -module "t" -var "text_long"
+forceable -module "t" -var "text"
+forceable -module "t" -var "too_big"
+forceable -module "t" -var "integer1"
+forceable -module "t" -var "byte1"
+forceable -module "t" -var "short1"
+forceable -module "t" -var "int1"
+forceable -module "t" -var "long1"
+forceable -module "t" -var "real1"
+
+forceable -module "t.sub" -var "subsig1"
+forceable -module "t.sub" -var "subsig2"
+
+
+forceable -module "t.arr[0].arr" -var "sig"
+forceable -module "t.arr[0].arr" -var "rfr"
+forceable -module "t.arr[0].arr" -var "check"
+forceable -module "t.arr[0].arr" -var "verbose"
+
+forceable -module "t.arr[1].arr" -var "sig"
+forceable -module "t.arr[1].arr" -var "rfr"
+forceable -module "t.arr[1].arr" -var "check"
+forceable -module "t.arr[1].arr" -var "verbose"
+
+forceable -module "t.arr[2].arr" -var "sig"
+forceable -module "t.arr[2].arr" -var "rfr"
+forceable -module "t.arr[2].arr" -var "check"
+forceable -module "t.arr[2].arr" -var "verbose"
+
+forceable -module "t.arr[3].arr" -var "sig"
+forceable -module "t.arr[3].arr" -var "rfr"
+forceable -module "t.arr[3].arr" -var "check"
+forceable -module "t.arr[3].arr" -var "verbose"
+
+forceable -module "t.arr[4].arr" -var "sig"
+forceable -module "t.arr[4].arr" -var "rfr"
+forceable -module "t.arr[4].arr" -var "check"
+forceable -module "t.arr[4].arr" -var "verbose"
+
+forceable -module "t.arr[5].arr" -var "sig"
+forceable -module "t.arr[5].arr" -var "rfr"
+forceable -module "t.arr[5].arr" -var "check"
+forceable -module "t.arr[5].arr" -var "verbose"
+
+forceable -module "t.arr[6].arr" -var "sig"
+forceable -module "t.arr[6].arr" -var "rfr"
+forceable -module "t.arr[6].arr" -var "check"
+forceable -module "t.arr[6].arr" -var "verbose"
+
+
+forceable -module "t.subs[0].subsub" -var "subsig1"
+forceable -module "t.subs[0].subsub" -var "subsig2"
+
+forceable -module "t.subs[1].subsub" -var "subsig1"
+forceable -module "t.subs[1].subsub" -var "subsig2"
+
+forceable -module "t.subs[2].subsub" -var "subsig1"
+forceable -module "t.subs[2].subsub" -var "subsig2"
+
+forceable -module "t.subs[3].subsub" -var "subsig1"
+forceable -module "t.subs[3].subsub" -var "subsig2"
+
+forceable -module "t.subs[4].subsub" -var "subsig1"
+forceable -module "t.subs[4].subsub" -var "subsig2"
+
+forceable -module "t.subs[5].subsub" -var "subsig1"
+forceable -module "t.subs[5].subsub" -var "subsig2"
+
+forceable -module "t.subs[6].subsub" -var "subsig1"
+forceable -module "t.subs[6].subsub" -var "subsig2"
+
+// The following signals have unpacked dimensions and are thus unsupported for forcing:
+// fourthreetwoone
+// quads
+// delayed_mem
+// some_mem
+
+// str1 is not set as forceable because strings cannot be forced.
