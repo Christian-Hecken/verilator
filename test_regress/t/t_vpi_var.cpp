@@ -1115,7 +1115,8 @@ int _mon_check_multi_index() {
     CHECK_RESULT(val_mem_2d_1_3, 11);
 
     // Test 10: vpi_handle_by_name with 2D array indexing (different index)
-    TestVpiHandle vh_mem_2d_2_5_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][5]", nullptr);
+    TestVpiHandle vh_mem_2d_2_5_by_name
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][5]", nullptr);
     CHECK_RESULT_NZ(vh_mem_2d_2_5_by_name);
 
     v.format = vpiIntVal;
