@@ -2214,7 +2214,7 @@ static bool vpi_parse_indices(const std::string& fullname, std::string& basename
         // pos now points to '[', extract index value between '[' and ']'
         size_t index_start = pos + 1;
         std::string index_str = fullname.substr(index_start, index_end - index_start + 1);
-        
+
         // Check if it contains ':' (bit selection range syntax, not array indexing)
         if (index_str.find(':') != std::string::npos) {
             // This is a bit selection [high:low], not array indexing, so bail out
@@ -2222,7 +2222,7 @@ static bool vpi_parse_indices(const std::string& fullname, std::string& basename
             indices.clear();
             return false;
         }
-        
+
         try {
             PLI_INT32 index_val = std::stoi(index_str);
             indices.push_back(index_val);
