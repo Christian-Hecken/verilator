@@ -1010,45 +1010,19 @@ int _mon_check_vlog_info() {
 }
 
 int _mon_check_multi_index() {
-    // Test vpi_handle_by_multi_index and vpi_handle_by_name with array indexing
+    // Comprehensive tests for vpi_handle_by_multi_index and vpi_handle_by_name with array indexing
 
-    // Test 1: Get quads array, then access quads[2] using multi_index
+    // ========== BASIC FUNCTIONALITY TESTS ==========
+
+    // Basic 1D unpacked array access
     TestVpiHandle vh_quads = vpi_handle_by_name((PLI_BYTE8*)"t.quads", nullptr);
     CHECK_RESULT_NZ(vh_quads);
 
-    // Single index: quads[2]
     PLI_INT32 indices_single[1] = {2};
     TestVpiHandle vh_quads_2 = vpi_handle_by_multi_index(vh_quads, 1, indices_single);
     CHECK_RESULT_NZ(vh_quads_2);
 
-    // Verify it's the same as using vpi_handle_by_index
-    TestVpiHandle vh_quads_2_single = vpi_handle_by_index(vh_quads, 2);
-    CHECK_RESULT_NZ(vh_quads_2_single);
-
-    // Both should provide the same data
-    s_vpi_value v;
-    v.format = vpiVectorVal;
-    t_vpi_vecval vv[2];
-    v.value.vector = vv;
-
-    vpi_get_value(vh_quads_2, &v);
-    uint64_t val_multi = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
-
-    vpi_get_value(vh_quads_2_single, &v);
-    uint64_t val_single = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
-
-    CHECK_RESULT_HEX(val_multi, val_single);
-
-    // Test 2: Try quads[3]
-    PLI_INT32 indices_3[1] = {3};
-    TestVpiHandle vh_quads_3 = vpi_handle_by_multi_index(vh_quads, 1, indices_3);
-    CHECK_RESULT_NZ(vh_quads_3);
-
-    vpi_get_value(vh_quads_3, &v);
-    uint64_t val = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
-    (void)val;  // Suppress unused variable warning
-
-    // Test 3: Test 2D array access mem_2d[1][3]
+    // 2D unpacked array access
     TestVpiHandle vh_mem_2d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d", nullptr);
     CHECK_RESULT_NZ(vh_mem_2d);
 
@@ -1056,84 +1030,262 @@ int _mon_check_multi_index() {
     TestVpiHandle vh_mem_2d_1_3 = vpi_handle_by_multi_index(vh_mem_2d, 2, indices_2d);
     CHECK_RESULT_NZ(vh_mem_2d_1_3);
 
+    s_vpi_value v;
     v.format = vpiIntVal;
     vpi_get_value(vh_mem_2d_1_3, &v);
-    int val_mem = v.value.integer;
-    // mem_2d[1][3] should be 1*8 + 3 = 11
-    CHECK_RESULT(val_mem, 11);
+    CHECK_RESULT(v.value.integer, 11);  // 1*8 + 3
 
-    // Test 4: Compare with sequential single-index calls
-    TestVpiHandle vh_mem_1st = vpi_handle_by_index(vh_mem_2d, 1);
-    CHECK_RESULT_NZ(vh_mem_1st);
+    // 3D unpacked array access
+    TestVpiHandle vh_mem_3d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d);
 
-    TestVpiHandle vh_mem_sequential = vpi_handle_by_index(vh_mem_1st, 3);
-    CHECK_RESULT_NZ(vh_mem_sequential);
+    PLI_INT32 indices_3d[3] = {1, 1, 1};
+    TestVpiHandle vh_mem_3d_1_1_1 = vpi_handle_by_multi_index(vh_mem_3d, 3, indices_3d);
+    CHECK_RESULT_NZ(vh_mem_3d_1_1_1);
 
     v.format = vpiIntVal;
-    vpi_get_value(vh_mem_sequential, &v);
-    int val_sequential = v.value.integer;
-    CHECK_RESULT(val_sequential, 11);
+    vpi_get_value(vh_mem_3d_1_1_1, &v);
+    CHECK_RESULT(v.value.integer, 7);  // (1*4) + (1*2) + 1
 
-    // Test 5: Test error handling - out of bounds
-    PLI_INT32 indices_oob[1] = {99};  // Out of bounds for quads which is [2:3]
-    TestVpiHandle vh_quads_oob = vpi_handle_by_multi_index(vh_quads, 1, indices_oob);
-    CHECK_RESULT_Z(vh_quads_oob);
+    // Verify multi_index matches sequential vpi_handle_by_index
+    TestVpiHandle vh_mem_2d_seq_1 = vpi_handle_by_index(vh_mem_2d, 1);
+    CHECK_RESULT_NZ(vh_mem_2d_seq_1);
+    TestVpiHandle vh_mem_2d_seq_1_3 = vpi_handle_by_index(vh_mem_2d_seq_1, 3);
+    CHECK_RESULT_NZ(vh_mem_2d_seq_1_3);
+    vpi_get_value(vh_mem_2d_seq_1_3, &v);
+    CHECK_RESULT(v.value.integer, 11);
 
-    // Test 6: Test error handling - null index array
-    TestVpiHandle vh_null = vpi_handle_by_multi_index(vh_quads, 1, nullptr);
-    CHECK_RESULT_Z(vh_null);
+    // ========== vpi_handle_by_name WITH ARRAY INDEXING ==========
 
-    // Test 7: Test error handling - zero num_index
-    PLI_INT32 indices_dummy[1] = {2};
-    TestVpiHandle vh_zero = vpi_handle_by_multi_index(vh_quads, 0, indices_dummy);
-    CHECK_RESULT_Z(vh_zero);
-
-    // Test 8: vpi_handle_by_name with single index
+    // Single index via name
     TestVpiHandle vh_quads_2_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
     CHECK_RESULT_NZ(vh_quads_2_by_name);
 
-    // Compare values with direct multi-index result
-    v.format = vpiVectorVal;
-    t_vpi_vecval vv2[2];
-    v.value.vector = vv2;
-
-    vpi_get_value(vh_quads_2, &v);
-    val_multi = ((uint64_t)vv2[1].aval << 32) | vv2[0].aval;
-
-    vpi_get_value(vh_quads_2_by_name, &v);
-    uint64_t val_by_name = ((uint64_t)vv2[1].aval << 32) | vv2[0].aval;
-
-    CHECK_RESULT_HEX(val_multi, val_by_name);
-
-    // Test 9: vpi_handle_by_name with 2D array indexing
+    // 2D array via name
     TestVpiHandle vh_mem_2d_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1][3]", nullptr);
     CHECK_RESULT_NZ(vh_mem_2d_by_name);
-
-    v.format = vpiIntVal;
     vpi_get_value(vh_mem_2d_by_name, &v);
-    int val_mem_2d_1_3 = v.value.integer;
-    CHECK_RESULT(val_mem_2d_1_3, 11);
+    CHECK_RESULT(v.value.integer, 11);
 
-    // Test 10: vpi_handle_by_name with 2D array indexing (different index)
-    TestVpiHandle vh_mem_2d_2_5_by_name
-        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][5]", nullptr);
-    CHECK_RESULT_NZ(vh_mem_2d_2_5_by_name);
+    // 3D array via name
+    TestVpiHandle vh_mem_3d_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_by_name);
+    vpi_get_value(vh_mem_3d_by_name, &v);
+    CHECK_RESULT(v.value.integer, 7);
 
-    v.format = vpiIntVal;
-    vpi_get_value(vh_mem_2d_2_5_by_name, &v);
-    int val_2d_2_5 = v.value.integer;
-    int expected_2d_2_5 = 2 * 8 + 5;  // 21
-    CHECK_RESULT(val_2d_2_5, expected_2d_2_5);
+    // Spaces in indices (should work - Verilog parser handles space)
+    TestVpiHandle vh_mem_2d_spaces = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[ 0 ][ 4 ]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_spaces);
+    vpi_get_value(vh_mem_2d_spaces, &v);
+    CHECK_RESULT(v.value.integer, 4);
 
-    // Test 11: vpi_handle_by_name with 1D array indexing
-    TestVpiHandle vh_mem_1d_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[7]", nullptr);
-    CHECK_RESULT_NZ(vh_mem_1d_by_name);
+    // ========== ERROR HANDLING: INVALID INPUTS TO vpi_handle_by_multi_index ==========
 
-    v.format = vpiIntVal;
-    vpi_get_value(vh_mem_1d_by_name, &v);
-    int val_1d_7 = v.value.integer;
-    int expected_1d_7 = 7 * 256;
-    CHECK_RESULT(val_1d_7, expected_1d_7);
+    // Null handle
+    PLI_INT32 dummy_indices[1] = {0};
+    TestVpiHandle vh_null_handle = vpi_handle_by_multi_index(nullptr, 1, dummy_indices);
+    CHECK_RESULT_Z(vh_null_handle);
+
+    // Null index array
+    TestVpiHandle vh_null_array = vpi_handle_by_multi_index(vh_quads, 1, nullptr);
+    CHECK_RESULT_Z(vh_null_array);
+
+    // Zero num_index
+    TestVpiHandle vh_zero_indices = vpi_handle_by_multi_index(vh_quads, 0, dummy_indices);
+    CHECK_RESULT_Z(vh_zero_indices);
+
+    // Negative num_index
+    TestVpiHandle vh_neg_indices = vpi_handle_by_multi_index(vh_quads, -1, dummy_indices);
+    CHECK_RESULT_Z(vh_neg_indices);
+
+    // ========== ERROR HANDLING: OUT OF BOUNDS AND INVALID INDICES ==========
+
+    // Out of bounds on 1D array (quads is [2:3])
+    PLI_INT32 oob_indices[1] = {99};
+    TestVpiHandle vh_quads_oob = vpi_handle_by_multi_index(vh_quads, 1, oob_indices);
+    CHECK_RESULT_Z(vh_quads_oob);
+
+    // Out of bounds on 2D array (mem_2d[0:3][0:7])
+    PLI_INT32 oob_indices_2d[2] = {0, 99};
+    TestVpiHandle vh_mem_2d_oob = vpi_handle_by_multi_index(vh_mem_2d, 2, oob_indices_2d);
+    CHECK_RESULT_Z(vh_mem_2d_oob);
+
+    // ========== ERROR HANDLING: TOO MANY DIMENSIONS / BIT SELECTION ==========
+
+    // Indexing into packed dimensions of a signal
+    // quads[2] returns a 62-bit packed vector, and we can select bits from it
+    // So quads[2][0] actually succeeds and returns a 1-bit value (bit selection is allowed)
+    TestVpiHandle vh_quads_elem = vpi_handle_by_index(vh_quads, 2);
+    CHECK_RESULT_NZ(vh_quads_elem);  // quads[2] should succeed
+    TestVpiHandle vh_quads_bit = vpi_handle_by_index(vh_quads_elem, 0);
+    CHECK_RESULT_NZ(vh_quads_bit);  // quads[2][0] succeeds - bit selection is allowed
+
+    // Verify multi-index works correctly and applying too many indices eventually fails
+    PLI_INT32 multi_indices[3] = {0, 0, 0};
+    TestVpiHandle vh_mem_3d_test = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_test);
+    // Apply all 3 indices - should work since mem_3d is 3D
+    TestVpiHandle vh_mem_3d_result = vpi_handle_by_multi_index(vh_mem_3d_test, 3, multi_indices);
+    CHECK_RESULT_NZ(vh_mem_3d_result);
+
+    // But applying more indices to 3D array should fail if we go beyond bit selection range
+    TestVpiHandle vh_3d_elem = vpi_handle_by_index(vh_mem_3d_result, 0);
+    CHECK_RESULT_NZ(vh_3d_elem);  // Index [0] into 16-bit value succeeds (bit 0)
+
+    // Try to index beyond available bits
+    TestVpiHandle vh_3d_elem_oob = vpi_handle_by_index(vh_mem_3d_result, 16);
+    CHECK_RESULT_Z(vh_3d_elem_oob);  // Index [16] on 16-bit value should fail (out of range)
+
+    // ========== ERROR HANDLING: INVALID SYNTAX IN vpi_handle_by_name ==========
+
+    // Trailing garbage after valid index
+    TestVpiHandle vh_trailing_garbage
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0]bar", nullptr);
+    CHECK_RESULT_Z(vh_trailing_garbage);
+
+    // Non-integer index
+    TestVpiHandle vh_non_int_index = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][abc]", nullptr);
+    CHECK_RESULT_Z(vh_non_int_index);
+
+    // Floating point index
+    TestVpiHandle vh_float_index = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][3.14]", nullptr);
+    CHECK_RESULT_Z(vh_float_index);
+
+    // Range index (colon notation) instead of single index
+    TestVpiHandle vh_range_index = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1:3]", nullptr);
+    CHECK_RESULT_Z(vh_range_index);
+
+    // Empty index brackets
+    TestVpiHandle vh_empty_brackets = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][]", nullptr);
+    CHECK_RESULT_Z(vh_empty_brackets);
+
+    // Missing closing bracket
+    TestVpiHandle vh_missing_close = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0[0]", nullptr);
+    CHECK_RESULT_Z(vh_missing_close);
+
+    // Unclosed bracket
+    TestVpiHandle vh_unclosed = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1", nullptr);
+    CHECK_RESULT_Z(vh_unclosed);
+
+    // ========== ERROR HANDLING: INDEXING NON-ARRAY SIGNALS ==========
+
+    // Attempt to index into a non-array scalar (onebit has no unpacked dimensions)
+    TestVpiHandle vh_onebit_indexed = vpi_handle_by_name((PLI_BYTE8*)"t.onebit[0]", nullptr);
+    CHECK_RESULT_Z(vh_onebit_indexed);
+
+    // Attempt to index into a packed-only vector (twoone has no unpacked dimensions)
+    TestVpiHandle vh_twoone_indexed = vpi_handle_by_name((PLI_BYTE8*)"t.twoone[0]", nullptr);
+    CHECK_RESULT_Z(vh_twoone_indexed);
+
+    // ========== ERROR HANDLING: NON-EXISTENT SIGNALS ==========
+
+    // Non-existent signal
+    TestVpiHandle vh_nonexistent = vpi_handle_by_name((PLI_BYTE8*)"t.nonexistent[0][0]", nullptr);
+    CHECK_RESULT_Z(vh_nonexistent);
+
+    // Partial path to non-existent signal that tries to index too far
+    TestVpiHandle vh_partial_nonexistent
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0][999]", nullptr);
+    CHECK_RESULT_Z(vh_partial_nonexistent);
+
+    // ========== EDGE CASES: BOUNDARY CONDITIONS ==========
+
+    // Lowest valid index on 2D array
+    PLI_INT32 indices_min[2] = {0, 0};
+    TestVpiHandle vh_mem_2d_min = vpi_handle_by_multi_index(vh_mem_2d, 2, indices_min);
+    CHECK_RESULT_NZ(vh_mem_2d_min);
+    vpi_get_value(vh_mem_2d_min, &v);
+    CHECK_RESULT(v.value.integer, 0);
+
+    // Highest valid index on 2D array
+    PLI_INT32 indices_max[2] = {3, 7};
+    TestVpiHandle vh_mem_2d_max = vpi_handle_by_multi_index(vh_mem_2d, 2, indices_max);
+    CHECK_RESULT_NZ(vh_mem_2d_max);
+    vpi_get_value(vh_mem_2d_max, &v);
+    CHECK_RESULT(v.value.integer, 31);  // 3*8 + 7
+
+    // ========== RANGE SELECTION TESTS (should all fail - ranges not supported as single index)
+    // ==========
+
+    // Range in first dimension
+    TestVpiHandle vh_range_first = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][0]", nullptr);
+    CHECK_RESULT_Z(vh_range_first);
+
+    // Range in second dimension
+    TestVpiHandle vh_range_second = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1:4]", nullptr);
+    CHECK_RESULT_Z(vh_range_second);
+
+    // Range in both dimensions
+    TestVpiHandle vh_range_both = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][1:4]", nullptr);
+    CHECK_RESULT_Z(vh_range_both);
+
+    // Plus notation for ranges
+    TestVpiHandle vh_range_plus = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0+:2][0]", nullptr);
+    CHECK_RESULT_Z(vh_range_plus);
+
+    // ========== MIXED PACKED AND UNPACKED DIMENSION TESTS ==========
+
+    // fourthreetwoone is a packed array: reg [2:1] fourthreetwoone[4:3]
+    // This has unpacked dimension [4:3] and packed dimensions [2:1]
+    TestVpiHandle vh_packed_array = vpi_handle_by_name((PLI_BYTE8*)"t.fourthreetwoone", nullptr);
+    if (vh_packed_array) {
+        // Access fourthreetwoone[4] - should succeed
+        TestVpiHandle vh_packed_elem
+            = vpi_handle_by_name((PLI_BYTE8*)"t.fourthreetwoone[4]", nullptr);
+        CHECK_RESULT_NZ(vh_packed_elem);
+
+        // Try to index into the packed element - should work for bit selection
+        TestVpiHandle vh_packed_bit = vpi_handle_by_index(vh_packed_elem, 1);
+        CHECK_RESULT_NZ(vh_packed_bit);  // Bit selection should work
+
+        // Try to index beyond available bits - should fail
+        TestVpiHandle vh_packed_oob_bit = vpi_handle_by_index(vh_packed_elem, 10);
+        CHECK_RESULT_Z(vh_packed_oob_bit);  // Out of range bit selection should fail
+    }
+
+    // ========== FINAL BIT SELECTION TESTS ==========
+
+    // mem_1d[0] returns a 32-bit value - we can select from it
+    TestVpiHandle vh_mem_1d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[0]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_1d);
+    TestVpiHandle vh_mem_1d_bit = vpi_handle_by_index(vh_mem_1d, 0);
+    CHECK_RESULT_NZ(vh_mem_1d_bit);  // Bit selection should work
+
+    // mem_2d[0][0] returns an 8-bit value - we can select from it
+    TestVpiHandle vh_mem_2d_elem = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_elem);
+    TestVpiHandle vh_mem_2d_elem_bit = vpi_handle_by_index(vh_mem_2d_elem, 0);
+    CHECK_RESULT_NZ(vh_mem_2d_elem_bit);  // Bit selection should work
+    TestVpiHandle vh_mem_2d_elem_bit_oob = vpi_handle_by_index(vh_mem_2d_elem, 8);
+    CHECK_RESULT_Z(vh_mem_2d_elem_bit_oob);  // Out of range bit should fail
+
+    // Highest valid index on 3D array
+    PLI_INT32 indices_3d_max[3] = {1, 1, 1};
+    TestVpiHandle vh_mem_3d_max = vpi_handle_by_multi_index(vh_mem_3d, 3, indices_3d_max);
+    CHECK_RESULT_NZ(vh_mem_3d_max);
+    vpi_get_value(vh_mem_3d_max, &v);
+    CHECK_RESULT(v.value.integer, 7);
+
+    // ========== EDGE CASES: MULTIPLE TESTS ON SAME ARRAY ==========
+
+    // Multiple sequential accesses to different indices
+    for (int idx = 0; idx < 4; idx++) {
+        PLI_INT32 test_indices[1] = {idx};
+        TestVpiHandle vh_mem_1d_idx = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d", nullptr);
+        if (!vh_mem_1d_idx) return 1033;  // Error code for debugging
+        TestVpiHandle vh_elem = vpi_handle_by_index(vh_mem_1d_idx, idx);
+        if (!vh_elem) return 1034;
+        vpi_get_value(vh_elem, &v);
+        CHECK_RESULT(v.value.integer, idx * 256);
+    }
+
+    // Multiple accesses to same element
+    for (int i = 0; i < 3; i++) {
+        TestVpiHandle vh_repeated = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][2]", nullptr);
+        CHECK_RESULT_NZ(vh_repeated);
+        vpi_get_value(vh_repeated, &v);
+        CHECK_RESULT(v.value.integer, 18);  // 2*8 + 2
+    }
 
     return 0;
 }
