@@ -1167,6 +1167,58 @@ int _mon_check_multi_index() {
     TestVpiHandle vh_unclosed = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1", nullptr);
     CHECK_RESULT_Z(vh_unclosed);
 
+    // ========== WHITESPACE ROBUSTNESS TESTS ==========
+
+    // Whitespace inside brackets
+    TestVpiHandle vh_ws_inside_single
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[ 1 ][ 3 ]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_inside_single);
+    vpi_get_value(vh_ws_inside_single, &v);
+    CHECK_RESULT(v.value.integer, 11);  // 1*8 + 3
+
+    // Leading zeros with whitespace
+    TestVpiHandle vh_ws_leading_zeros
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[ 001 ][ 002 ]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_leading_zeros);
+    vpi_get_value(vh_ws_leading_zeros, &v);
+    CHECK_RESULT(v.value.integer, 10);  // 1*8 + 2
+
+    // Whitespace between bracket groups
+    TestVpiHandle vh_ws_between_brackets
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2] [4]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_between_brackets);
+    vpi_get_value(vh_ws_between_brackets, &v);
+    CHECK_RESULT(v.value.integer, 20);  // 2*8 + 4
+
+    // Multiple whitespace between bracket groups
+    TestVpiHandle vh_ws_multi_between
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0]  \t  [5]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_multi_between);
+    vpi_get_value(vh_ws_multi_between, &v);
+    CHECK_RESULT(v.value.integer, 5);  // 0*8 + 5
+
+    // Trailing whitespace after indices
+    TestVpiHandle vh_ws_trailing = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][7]  ", nullptr);
+    CHECK_RESULT_NZ(vh_ws_trailing);
+    vpi_get_value(vh_ws_trailing, &v);
+    CHECK_RESULT(v.value.integer, 31);  // 3*8 + 7
+
+    // Whitespace with tab characters
+    TestVpiHandle vh_ws_tabs = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[\t2\t][\t6\t]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_tabs);
+    vpi_get_value(vh_ws_tabs, &v);
+    CHECK_RESULT(v.value.integer, 22);  // 2*8 + 6
+
+    // Whitespace with newline characters
+    TestVpiHandle vh_ws_newline = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1\n][2]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_newline);
+    vpi_get_value(vh_ws_newline, &v);
+    CHECK_RESULT(v.value.integer, 10);  // 1*8 + 2
+
+    // Only whitespace inside brackets - should fail
+    TestVpiHandle vh_ws_only = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[   ][0]", nullptr);
+    CHECK_RESULT_Z(vh_ws_only);
+
     // ========== ERROR HANDLING: INDEXING NON-ARRAY SIGNALS ==========
 
     // Attempt to index into a non-array scalar (onebit has no unpacked dimensions)
