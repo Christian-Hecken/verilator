@@ -2245,6 +2245,112 @@ static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
     return true;
 }
 
+// Parse a trailing bit range like [31:0] or [5:5] from a name.
+// Returns true and sets hi/lo if a bit range is found and valid in brackets.
+// Returns false if no brackets found or content is not a valid bit range.
+// If successful, 'name' is modified to remove the parsed bit range.
+//
+// ARCHITECTURE NOTE:
+// This function is designed for UVM HDL access to extract bit range selections.
+// Responsibility boundary:
+// - vpi_parse_indices(): Handles multi-dimensional ARRAY indexing [0][3][2]
+// - vpi_parse_bitrange(): Handles BIT RANGE selection [31:0] on signals
+//
+// For combined access like mem[0][3][31:0]:
+// 1. vpi_handle_by_name() calls vpi_parse_indices() to extract [0][3]
+// 2. UVM's code calls vpi_parse_bitrange() to extract [31:0]
+// 3. Both layers work together: VPI handles array elements, UVM handles bit selection
+//
+// By keeping these concerns separate, we avoid conflicts and make semantics clear.
+static bool vpi_parse_bitrange(std::string& name, int& hi, int& lo) {
+    if (name.empty()) { return false; }
+
+    // Find trailing ']' (skipping whitespace)
+    size_t pos = name.length();
+    while (pos > 0 && isSpaceChar(name[pos - 1])) { --pos; }
+
+    if (pos == 0 || name[pos - 1] != ']') { return false; }
+
+    // Find the matching '[' for the last ']'
+    size_t close_pos = pos - 1;
+    size_t bracket_depth = 1;
+    pos = close_pos;
+    while (pos > 0 && bracket_depth > 0) {
+        --pos;
+        if (name[pos] == ']') {
+            ++bracket_depth;
+        } else if (name[pos] == '[') {
+            --bracket_depth;
+        }
+    }
+    if (bracket_depth != 0) { return false; }  // Unmatched brackets
+
+    size_t open_pos = pos;
+    std::string content = name.substr(open_pos + 1, close_pos - open_pos - 1);
+
+    // Trim whitespace from content
+    size_t start = 0;
+    size_t end = content.length();
+    while (start < end && isSpaceChar(content[start])) { ++start; }
+    while (end > start && isSpaceChar(content[end - 1])) { --end; }
+
+    content = content.substr(start, end - start);
+    if (content.empty()) { return false; }
+
+    // Check if it's a bit range [hi:lo] or single index [idx]
+    size_t colon_pos = content.find(':');
+    if (colon_pos == std::string::npos) {
+        // Single index [idx] - treat as [idx:idx]
+        char* endp = nullptr;
+        long idx = std::strtol(content.c_str(), &endp, 10);
+        if (!endp || *endp != '\0') { return false; }
+        hi = lo = static_cast<int>(idx);
+    } else {
+        // Range [hi:lo]
+        std::string hi_str = content.substr(0, colon_pos);
+        std::string lo_str = content.substr(colon_pos + 1);
+
+        // Trim whitespace
+        while (!hi_str.empty() && isSpaceChar(hi_str.back())) { hi_str.pop_back(); }
+        while (!hi_str.empty() && isSpaceChar(hi_str.front())) { hi_str = hi_str.substr(1); }
+        while (!lo_str.empty() && isSpaceChar(lo_str.back())) { lo_str.pop_back(); }
+        while (!lo_str.empty() && isSpaceChar(lo_str.front())) { lo_str = lo_str.substr(1); }
+
+        if (hi_str.empty() || lo_str.empty()) { return false; }
+
+        char* hi_endp = nullptr;
+        char* lo_endp = nullptr;
+        long hi_val = std::strtol(hi_str.c_str(), &hi_endp, 10);
+        long lo_val = std::strtol(lo_str.c_str(), &lo_endp, 10);
+
+        if (!hi_endp || *hi_endp != '\0' || !lo_endp || *lo_endp != '\0') { return false; }
+
+        hi = static_cast<int>(hi_val);
+        lo = static_cast<int>(lo_val);
+    }
+
+    // Successfully parsed - remove the bit range from name
+    name.erase(open_pos);
+    return true;
+}
+
+// Parse multi-dimensional array indices from a name string.
+// e.g., "mem[0][3][2]" -> modifies name to "mem" and populates indices with {0, 3, 2}
+// Returns true if indices were found and parsed successfully, false otherwise.
+//
+// ARCHITECTURE NOTE:
+// This function handles ONLY consecutive bracket groups with integer indices
+// (e.g., multi-dimensional array access). For bit range selection [hi:lo],
+// use vpi_parse_bitrange() instead.
+//
+// This is used by vpi_handle_by_name() to support direct array element access.
+// Example: vpi_handle_by_name("top.mem[0][3]", scope) now works and extracts
+// both the variable "mem" and applies the indices [0][3] to get the element.
+//
+// For combined access like mem[0][3][31:0]:
+// 1. This function extracts the array indices [0][3]
+// 2. vpi_parse_bitrange() would handle [31:0] separately (used by UVM layer)
+// 3. They work together: arrays first, then bit ranges on the result
 static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices) {
     // Check if name has any indices
     if (name.empty()) { return false; }

@@ -87,50 +87,106 @@ static int uvm_hdl_max_width() {
 }
 
 /*
- * Internals: Given a path, look at the path name and determine
- * the handle and any partsel's needed to access it.
+ * Internals: Parse the trailing bracket in a name to extract bit range.
+ * Input: path string like "signal[31:0]" or "signal[5]"
+ * Output: hi, lo (bit positions), returns true if a bit range was found
+ *
+ * Note: This function handles ONLY the LAST bracket pair as a bit range.
+ * Multi-dimensional array indexing (e.g., mem[0][3]) is handled by
+ * vpi_handle_by_name() in the VPI layer, which now supports array indices.
+ *
+ * For combined access like mem[0][3][31:0]:
+ * 1. vpi_handle_by_name("mem[0][3]") gets the array element (via VPI's vpi_parse_indices)
+ * 2. This function would then parse [31:0] as the bit range
+ * 3. The bit range is applied to the array element handle
  */
-static vpiHandle uvm_hdl_handle_by_name_partsel(char *path, int *is_partsel_ptr, int *hi_ptr,
-                                                int *lo_ptr) {
-  vpiHandle r;
-  char *path_ptr;
-  char *path_base_ptr;
+static int uvm_hdl_parse_bitrange(char* path, int* hi_ptr, int* lo_ptr) {
+  char* path_ptr;
   int temp;
-  *is_partsel_ptr = 0;
 
-  if (!path || !path[0]) return 0;
+  // Find the last ']' in the path
+  path_ptr = (char*)(path + strlen(path) - 1);
+  if (*path_ptr != ']') return 0;  // No closing bracket
 
-  // If direct lookup works, go with that
-  r = vpi_handle_by_name(path, 0);
-  if (r) return r;
+  // Work backwards to find '[' and any ':' (for range notation)
+  while (path_ptr != path && *path_ptr != ':' && *path_ptr != '[') { --path_ptr; }
+  if (path_ptr == path) return 0;  // Didn't find opening bracket
 
-  // Find array subscript
-  path_ptr = (char *)(path + strlen(path) - 1);
-  if (*path_ptr != ']') return 0;
-
-  while (path_ptr != path && *path_ptr != ':' && *path_ptr != '[') --path_ptr;
-  if (path_ptr == path) return 0;
+  // Parse the first index (or only index if no ':')
   *lo_ptr = *hi_ptr = atoi(path_ptr + 1);
-  *is_partsel_ptr = 1;
 
+  // Check if there's a colon indicating a range [hi:lo]
   if (*path_ptr == ':') {
-    --path_ptr;  // back over :
+    --path_ptr;  // Back over ':'
 
-    while (path_ptr != path && *path_ptr != '[') --path_ptr;
+    // Find the opening bracket
+    while (path_ptr != path && *path_ptr != '[') { --path_ptr; }
     *hi_ptr = atoi(path_ptr + 1);
     if (path_ptr == path) return 0;
   }
 
+  // Ensure hi >= lo for normalized range
   if (*lo_ptr > *hi_ptr) {
     temp = *lo_ptr;
     *lo_ptr = *hi_ptr;
     *hi_ptr = temp;
   }
 
-  path_base_ptr = strndup(path, (path_ptr - path));
+  return 1;  // Successfully parsed a bit range
+}
 
+/*
+ * Internals: Given a path, look at the path name and determine
+ * the handle and any partsel's needed to access it.
+ *
+ * Responsibilities:
+ * - Multi-dimensional array indexing (e.g., mem[0][3][2]) is handled by
+ *   vpi_handle_by_name(), which now supports this natively via vpi_parse_indices.
+ * - This function extracts and handles bit range selection (e.g., signal[31:0])
+ *   from the trailing brackets, and applies them as partsel operations.
+ *
+ * Examples:
+ * - "top.myvar" -> direct VPI lookup
+ * - "top.mem[0][3]" -> vpi_handle_by_name handles array indices
+ * - "top.signal[31:0]" -> vpi_handle_by_name gets signal, then we apply bitrange
+ * - "top.mem[0][3][31:0]" -> vpi_handle_by_name gets mem[0][3], then we apply bitrange
+ */
+static vpiHandle uvm_hdl_handle_by_name_partsel(char *path, int *is_partsel_ptr, int *hi_ptr,
+                                                int *lo_ptr) {
+  vpiHandle r;
+  char *path_base_ptr;
+  *is_partsel_ptr = 0;
+
+  if (!path || !path[0]) return 0;
+
+  // First, try direct VPI lookup. This now works for:
+  // - Simple names: "signal"
+  // - Hierarchical: "top.module.varname" 
+  // - Array indices: "mem[0][3]" (handled by vpi_parse_indices in VPI layer)
+  r = vpi_handle_by_name(path, 0);
+  if (r) return r;
+
+  // If direct lookup failed, check if there's a bit range in trailing brackets
+  // (The VPI layer's vpi_parse_indices handles array indices, not bit ranges)
+  if (!uvm_hdl_parse_bitrange(path, hi_ptr, lo_ptr)) {
+    // No bit range found and direct lookup failed
+    return 0;
+  }
+
+  // We found a bit range - extract the base name without the bit range
+  // Find the position of the '[' that starts the bit range
+  char* bracket_pos = (char*)(path + strlen(path) - 1);
+  while (bracket_pos != path && *bracket_pos != '[') { --bracket_pos; }
+  if (bracket_pos == path) return 0;
+
+  path_base_ptr = strndup(path, (bracket_pos - path));
+
+  // Now try VPI lookup on the base name (which may have array indices, now supported!)
   r = vpi_handle_by_name(path_base_ptr, 0);
   if (!r) return 0;
+
+  // Mark that this is a partsel operation
+  *is_partsel_ptr = 1;
 
   {
     vpiHandle rh;
