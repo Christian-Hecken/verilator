@@ -4110,9 +4110,7 @@ vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT3
     vpiHandle result_handle = obj;
     for (PLI_INT32 i = 0; i < num_index; ++i) {
         result_handle = vpi_handle_by_index(result_handle, index_array[i]);
-        if (VL_UNLIKELY(!result_handle)) {
-            return nullptr;
-        }
+        if (VL_UNLIKELY(!result_handle)) { return nullptr; }
     }
 
     return result_handle;
