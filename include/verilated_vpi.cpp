@@ -41,6 +41,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 //======================================================================
 // Internal constants
@@ -2173,6 +2174,71 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
     VL_VPI_UNIMP_();
 }
 
+// Helper function to parse array indices from a name string
+// e.g., "mem[0][3][2]" -> returns "mem" and populates indices with {0, 3, 2}
+// Returns true if indices were found, false otherwise
+static bool vpi_parse_indices(const std::string& fullname, std::string& basename,
+                              std::vector<PLI_INT32>& indices) {
+    // Check if name ends with ']' (indicating array indexing)
+    if (fullname.empty() || fullname.back() != ']') {
+        basename = fullname;
+        return false;
+    }
+
+    indices.clear();
+    size_t pos = fullname.length();  // Start just past the final ']'
+
+    // Parse indices from right to left
+    while (pos > 0 && fullname[pos - 1] == ']') {
+        --pos;  // Move to ']'
+        int bracket_depth = 1;
+        size_t index_end = pos - 1;  // Character before ']'
+
+        // Walk backwards to find opening bracket
+        while (pos > 0 && bracket_depth > 0) {
+            --pos;
+            if (fullname[pos] == ']') {
+                ++bracket_depth;
+            } else if (fullname[pos] == '[') {
+                --bracket_depth;
+            }
+        }
+
+        if (bracket_depth != 0) {
+            // Mismatched brackets
+            basename = fullname;
+            indices.clear();
+            return false;
+        }
+
+        // pos now points to '[', extract index value between '[' and ']'
+        size_t index_start = pos + 1;
+        std::string index_str = fullname.substr(index_start, index_end - index_start + 1);
+        try {
+            PLI_INT32 index_val = std::stoi(index_str);
+            indices.push_back(index_val);
+        } catch (...) {
+            // Failed to parse index as integer
+            basename = fullname;
+            indices.clear();
+            return false;
+        }
+    }
+
+    if (indices.empty()) {
+        basename = fullname;
+        return false;
+    }
+
+    // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
+    std::reverse(indices.begin(), indices.end());
+
+    // basename is everything before the opening bracket
+    basename = fullname.substr(0, pos);
+
+    return true;
+}
+
 // for obtaining handles
 
 vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
@@ -2180,22 +2246,32 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     VL_VPI_ERROR_RESET_();
     if (VL_UNLIKELY(!namep)) return nullptr;
     VL_DEBUG_IF_PLI(VL_DBG_MSGF("- vpi: vpi_handle_by_name %s %p\n", namep, scope););
+
+    // Parse any array indices from the name (e.g., "mem[0][3][2]")
+    std::string fullname{namep};
+    std::string basename;
+    std::vector<PLI_INT32> indices;
+    bool has_indices = vpi_parse_indices(fullname, basename, indices);
+
+    // If we found indices, use the basename for the lookup
+    const char* lookup_name = has_indices ? basename.c_str() : namep;
+
     const VerilatedVar* varp = nullptr;
     const VerilatedScope* scopep;
     const VerilatedVpioScope* const voScopep = VerilatedVpioScope::castp(scope);
-    std::string scopeAndName = namep;
-    if (0 == std::strncmp(namep, "$root.", std::strlen("$root."))) {
-        namep += std::strlen("$root.");
-        scopeAndName = namep;
+    std::string scopeAndName = lookup_name;
+    if (0 == std::strncmp(lookup_name, "$root.", std::strlen("$root."))) {
+        lookup_name += std::strlen("$root.");
+        scopeAndName = lookup_name;
     } else if (voScopep) {
         const bool scopeIsPackage = VerilatedVpioPackage::castp(scope) != nullptr;
-        scopeAndName = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + namep;
-        namep = const_cast<PLI_BYTE8*>(scopeAndName.c_str());
+        scopeAndName = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + lookup_name;
+        lookup_name = const_cast<char*>(scopeAndName.c_str());
     }
     {
         // This doesn't yet follow the hierarchy in the proper way
         bool isPackage = false;
-        scopep = Verilated::threadContextp()->scopeFind(namep);
+        scopep = Verilated::threadContextp()->scopeFind(lookup_name);
         if (scopep) {  // Whole thing found as a scope
             if (scopep->type() == VerilatedScope::SCOPE_MODULE) {
                 return (new VerilatedVpioModule{scopep})->castVpiHandle();
@@ -2205,7 +2281,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
                 return (new VerilatedVpioScope{scopep})->castVpiHandle();
             }
         }
-        std::string basename = scopeAndName;
+        std::string bn = scopeAndName;
         std::string scopename;
         std::string::size_type prevpos = std::string::npos;
         std::string::size_type pos = std::string::npos;
@@ -2230,28 +2306,40 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
         }
         // Do the split
         if (VL_LIKELY(pos != std::string::npos)) {
-            basename.erase(0, pos + (isPackage ? 2 : 1));
+            bn.erase(0, pos + (isPackage ? 2 : 1));
             scopename = scopeAndName.substr(0, pos);
             if (scopename == "$unit") scopename = "\\$unit ";
         }
         if (prevpos == std::string::npos) {
             // scopename is a toplevel (no '.' separator), so search in our TOP ports first.
             scopep = Verilated::threadContextp()->scopeFind("TOP");
-            if (scopep) varp = scopep->varFind(basename.c_str());
+            if (scopep) varp = scopep->varFind(bn.c_str());
         }
         if (!varp) {
             scopep = Verilated::threadContextp()->scopeFind(scopename.c_str());
             if (!scopep) return nullptr;
-            varp = scopep->varFind(basename.c_str());
+            varp = scopep->varFind(bn.c_str());
         }
     }
     if (!varp) return nullptr;
 
+    // Create the initial variable handle
+    vpiHandle result_handle;
     if (varp->isParam()) {
-        return (new VerilatedVpioParam{varp, scopep})->castVpiHandle();
+        result_handle = (new VerilatedVpioParam{varp, scopep})->castVpiHandle();
     } else {
-        return (new VerilatedVpioVar{varp, scopep})->castVpiHandle();
+        result_handle = (new VerilatedVpioVar{varp, scopep})->castVpiHandle();
     }
+
+    // If we have indices, apply them using vpi_handle_by_multi_index
+    if (has_indices && !indices.empty()) {
+        // Convert vector to array for vpi_handle_by_multi_index
+        std::vector<PLI_INT32> indices_array = indices;
+        result_handle
+            = vpi_handle_by_multi_index(result_handle, indices_array.size(), indices_array.data());
+    }
+
+    return result_handle;
 }
 
 vpiHandle vpi_handle_by_index(vpiHandle object, PLI_INT32 indx) {

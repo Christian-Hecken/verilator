@@ -159,6 +159,95 @@ extern "C" int mon_check() {
         printf("SUCCESS: Zero num_index check works correctly\n");
     }
 
+    printf("\nTesting vpi_handle_by_name with array indexing\n");
+
+    // Test 8: vpi_handle_by_name with single index
+    vpiHandle vh_quads_2_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", root);
+    if (!vh_quads_2_by_name) {
+        printf("ERROR: vpi_handle_by_name(t.quads[2]) failed\n");
+        errors++;
+    } else {
+        printf("SUCCESS: Got quads[2] using vpi_handle_by_name\n");
+
+        // Compare values with direct multi-index result
+        v.format = vpiVectorVal;
+        s_vpi_vecval vv[2];
+        v.value.vector = vv;
+
+        vpi_get_value(vh_quads_2, &v);
+        uint64_t val_multi = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
+
+        vpi_get_value(vh_quads_2_by_name, &v);
+        uint64_t val_by_name = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
+
+        if (val_multi != val_by_name) {
+            printf("ERROR: vpi_handle_by_name[2] and vpi_handle_by_multi_index values differ: 0x%lx "
+                   "vs 0x%lx\n",
+                   val_by_name, val_multi);
+            errors++;
+        } else {
+            printf("SUCCESS: vpi_handle_by_name[2] matches multi-index result: 0x%lx\n",
+                   val_by_name);
+        }
+    }
+
+    // Test 9: vpi_handle_by_name with 2D array indexing
+    vpiHandle vh_mem_2d_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1][3]", root);
+    if (!vh_mem_2d_by_name) {
+        printf("ERROR: vpi_handle_by_name(t.mem_2d[1][3]) failed\n");
+        errors++;
+    } else {
+        printf("SUCCESS: Got mem_2d[1][3] using vpi_handle_by_name\n");
+
+        v.format = vpiIntVal;
+        vpi_get_value(vh_mem_2d_by_name, &v);
+        int val_by_name = v.value.integer;
+
+        if (val_by_name != 11) {
+            printf("ERROR: mem_2d[1][3] via vpi_handle_by_name expected 11, got %d\n", val_by_name);
+            errors++;
+        } else {
+            printf("SUCCESS: mem_2d[1][3] via vpi_handle_by_name = %d\n", val_by_name);
+        }
+    }
+
+    // Test 10: vpi_handle_by_name with 3D array indexing (if mem_1d was 3D)
+    // For now, test mem_2d[2][5] which is another 2D access
+    vpiHandle vh_mem_2d_2_5_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][5]", root);
+    if (!vh_mem_2d_2_5_by_name) {
+        printf("ERROR: vpi_handle_by_name(t.mem_2d[2][5]) failed\n");
+        errors++;
+    } else {
+        v.format = vpiIntVal;
+        vpi_get_value(vh_mem_2d_2_5_by_name, &v);
+        int val = v.value.integer;
+        int expected = 2 * 8 + 5;  // 21
+        if (val != expected) {
+            printf("ERROR: mem_2d[2][5] expected %d, got %d\n", expected, val);
+            errors++;
+        } else {
+            printf("SUCCESS: mem_2d[2][5] via vpi_handle_by_name = %d\n", val);
+        }
+    }
+
+    // Test 11: vpi_handle_by_name with 1D array indexing
+    vpiHandle vh_mem_1d_by_name = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[7]", root);
+    if (!vh_mem_1d_by_name) {
+        printf("ERROR: vpi_handle_by_name(t.mem_1d[7]) failed\n");
+        errors++;
+    } else {
+        v.format = vpiIntVal;
+        vpi_get_value(vh_mem_1d_by_name, &v);
+        int val = v.value.integer;
+        int expected = 7 * 256;
+        if (val != expected) {
+            printf("ERROR: mem_1d[7] expected %d, got %d\n", expected, val);
+            errors++;
+        } else {
+            printf("SUCCESS: mem_1d[7] via vpi_handle_by_name = %d\n", val);
+        }
+    }
+
     if (errors == 0) {
         printf("\nAll tests passed!\n");
         return 0;
