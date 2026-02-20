@@ -9,11 +9,11 @@
 #include "verilated.h"
 #include "verilated_vpi.h"
 
+#include "TestVpi.h"
+
 #include <cstdio>
 #include <cstring>
 #include <iostream>
-
-#include "TestVpi.h"
 
 int errors = 0;
 
