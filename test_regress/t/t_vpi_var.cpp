@@ -1339,6 +1339,233 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 18);  // 2*8 + 2
     }
 
+    // ========== VPI_HANDLE_BY_NAME WITH BIT SELECTION TESTS ==========
+
+    // Test bit selection on packed vectors via vpi_handle_by_name
+    // quads is reg [0:61] quads[2:3], so quads[2] is a 62-bit word
+    // We should be able to select individual bits
+
+    // Get quads[2] by name and verify it's accessible
+    TestVpiHandle vh_quads_2_byname = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
+    CHECK_RESULT_NZ(vh_quads_2_byname);
+
+    // quads[2] should be a vpiReg with size 62
+    int quads_2_type = vpi_get(vpiType, vh_quads_2_byname);
+    CHECK_RESULT(quads_2_type, vpiReg);
+    int quads_2_size = vpi_get(vpiSize, vh_quads_2_byname);
+    CHECK_RESULT(quads_2_size, 62);
+
+    // Now index into a bit of quads[2]
+    TestVpiHandle vh_quads_2_bit0 = vpi_handle_by_index(vh_quads_2_byname, 0);
+    CHECK_RESULT_NZ(vh_quads_2_bit0);
+
+    // The bit should be type vpiReg with size 1
+    int quads_2_bit0_type = vpi_get(vpiType, vh_quads_2_bit0);
+    CHECK_RESULT(quads_2_bit0_type, vpiReg);  // Verilator uses vpiReg instead of vpiRegBit
+    int quads_2_bit0_size = vpi_get(vpiSize, vh_quads_2_bit0);
+    CHECK_RESULT(quads_2_bit0_size, 1);
+
+    // Test another bit
+    TestVpiHandle vh_quads_2_bit32 = vpi_handle_by_index(vh_quads_2_byname, 32);
+    CHECK_RESULT_NZ(vh_quads_2_bit32);
+    int quads_2_bit32_size = vpi_get(vpiSize, vh_quads_2_bit32);
+    CHECK_RESULT(quads_2_bit32_size, 1);
+
+    // Test out of range bit selection should fail
+    TestVpiHandle vh_quads_2_bit_oob = vpi_handle_by_index(vh_quads_2_byname, 100);
+    CHECK_RESULT_Z(vh_quads_2_bit_oob);
+
+    // Test mem_2d[1][3] - should be an 8-bit word
+    TestVpiHandle vh_mem_2d_1_3_byname = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1][3]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_1_3_byname);
+
+    // Verify size
+    int mem_2d_1_3_size = vpi_get(vpiSize, vh_mem_2d_1_3_byname);
+    CHECK_RESULT(mem_2d_1_3_size, 8);
+
+    // Get value and verify
+    vpi_get_value(vh_mem_2d_1_3_byname, &v);
+    CHECK_RESULT(v.value.integer, 11);  // 1*8 + 3
+
+    // Index into bit 5 of mem_2d[1][3]
+    TestVpiHandle vh_mem_2d_1_3_bit5 = vpi_handle_by_index(vh_mem_2d_1_3_byname, 5);
+    CHECK_RESULT_NZ(vh_mem_2d_1_3_bit5);
+
+    // Bit should have size 1
+    int mem_2d_1_3_bit5_size = vpi_get(vpiSize, vh_mem_2d_1_3_bit5);
+    CHECK_RESULT(mem_2d_1_3_bit5_size, 1);
+
+    // Test mem_3d[0][1][1] - access the 16-bit element
+    TestVpiHandle vh_mem_3d_0_1_1_byname
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][1][1]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_0_1_1_byname);
+
+    // Verify value: (0*4) + (1*2) + 1 = 3
+    vpi_get_value(vh_mem_3d_0_1_1_byname, &v);
+    CHECK_RESULT(v.value.integer, 3);
+
+    // Verify size is 16
+    int mem_3d_0_1_1_size = vpi_get(vpiSize, vh_mem_3d_0_1_1_byname);
+    CHECK_RESULT(mem_3d_0_1_1_size, 16);
+
+    // Index into bit 7 of mem_3d[0][1][1]
+    TestVpiHandle vh_mem_3d_0_1_1_bit7 = vpi_handle_by_index(vh_mem_3d_0_1_1_byname, 7);
+    CHECK_RESULT_NZ(vh_mem_3d_0_1_1_bit7);
+
+    // Bit 7 should have size 1
+    int mem_3d_0_1_1_bit7_size = vpi_get(vpiSize, vh_mem_3d_0_1_1_bit7);
+    CHECK_RESULT(mem_3d_0_1_1_bit7_size, 1);
+
+    // Test complete bit selection via nested vpi_handle_by_index calls
+    // Get quads[3] and select bit 20
+    TestVpiHandle vh_quads_3_byname = vpi_handle_by_name((PLI_BYTE8*)"t.quads[3]", nullptr);
+    CHECK_RESULT_NZ(vh_quads_3_byname);
+    TestVpiHandle vh_quads_3_bit20 = vpi_handle_by_index(vh_quads_3_byname, 20);
+    CHECK_RESULT_NZ(vh_quads_3_bit20);
+    int quads_3_bit20_size = vpi_get(vpiSize, vh_quads_3_bit20);
+    CHECK_RESULT(quads_3_bit20_size, 1);
+
+    // ========== DESCENDING INDEX RANGE TESTS ==========
+
+    // Test memory with descending indices: mem_2d[3:0][7:0]
+    TestVpiHandle vh_mem_2d_3_7 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][7]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_3_7);
+    vpi_get_value(vh_mem_2d_3_7, &v);
+    CHECK_RESULT(v.value.integer, 31);  // 3*8 + 7
+
+    // Test accessing lowest index on descending ranges
+    TestVpiHandle vh_mem_2d_0_0 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_0_0);
+    vpi_get_value(vh_mem_2d_0_0, &v);
+    CHECK_RESULT(v.value.integer, 0);
+
+    // Test 3D with mixed descending (mem_3d[0:1][1:0][0:1])
+    // This has one descending dimension in the middle
+    TestVpiHandle vh_mem_3d_0_0_0 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][0]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_0_0_0);
+    vpi_get_value(vh_mem_3d_0_0_0, &v);
+    CHECK_RESULT(v.value.integer, 0);
+
+    // Test with the descending index in the middle
+    TestVpiHandle vh_mem_3d_0_1_1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][1][1]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_0_1_1);
+    vpi_get_value(vh_mem_3d_0_1_1, &v);
+    CHECK_RESULT(v.value.integer, 3);  // (0*4) + (1*2) + 1
+
+    // ========== MULTIPLE PACKED DIMENSIONS TEST ==========
+
+    // multi_packed is reg [3:0][7:0] multi_packed[2:0]
+    // multi_packed[1] is a 32-bit value [3:0][7:0]
+    TestVpiHandle vh_multi_packed_1 = vpi_handle_by_name((PLI_BYTE8*)"t.multi_packed[1]", nullptr);
+    CHECK_RESULT_NZ(vh_multi_packed_1);
+
+    // Should be 32 bits (4*8)
+    int multi_packed_1_size = vpi_get(vpiSize, vh_multi_packed_1);
+    CHECK_RESULT(multi_packed_1_size, 32);
+
+    // Get value
+    vpi_get_value(vh_multi_packed_1, &v);
+    // multi_packed[1][j] = (1 * 4) + j, so multi_packed[1] = [4+3][4+2][4+1][4+0]=[7][6][5][4]
+    // which is 0x07060504 in little endian or layout-dependent
+
+    // Index into packed dimension of multi_packed[1][2]
+    TestVpiHandle vh_multi_packed_1_2 = vpi_handle_by_index(vh_multi_packed_1, 2);
+    CHECK_RESULT_NZ(vh_multi_packed_1_2);
+
+    // Should be 8 bits
+    int multi_packed_1_2_size = vpi_get(vpiSize, vh_multi_packed_1_2);
+    CHECK_RESULT(multi_packed_1_2_size, 8);
+
+    // Index further into the bit level
+    TestVpiHandle vh_multi_packed_1_2_bit3 = vpi_handle_by_index(vh_multi_packed_1_2, 3);
+    CHECK_RESULT_NZ(vh_multi_packed_1_2_bit3);
+
+    int multi_packed_1_2_bit3_size = vpi_get(vpiSize, vh_multi_packed_1_2_bit3);
+    CHECK_RESULT(multi_packed_1_2_bit3_size, 1);
+
+    // ========== PARTIAL INDEXING TESTS (not all the way) ==========
+
+    // mem_2d is [0:3][0:7], indexing only first dimension should give us a handle
+    // to "remaining with the second dimension"
+    TestVpiHandle vh_mem_2d_partial_1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_2d_partial_1);
+
+    // This should be a vpiRegArray with size 8 (the remaining [0:7] dimension)
+    int mem_2d_partial_1_type = vpi_get(vpiType, vh_mem_2d_partial_1);
+    CHECK_RESULT(mem_2d_partial_1_type, vpiRegArray);
+    int mem_2d_partial_1_size = vpi_get(vpiSize, vh_mem_2d_partial_1);
+    CHECK_RESULT(mem_2d_partial_1_size, 8);
+
+    // Can further index into it
+    TestVpiHandle vh_mem_2d_partial_1_3 = vpi_handle_by_index(vh_mem_2d_partial_1, 3);
+    CHECK_RESULT_NZ(vh_mem_2d_partial_1_3);
+    int mem_2d_partial_1_3_type = vpi_get(vpiType, vh_mem_2d_partial_1_3);
+    CHECK_RESULT(mem_2d_partial_1_3_type, vpiReg);
+    int mem_2d_partial_1_3_size = vpi_get(vpiSize, vh_mem_2d_partial_1_3);
+    CHECK_RESULT(mem_2d_partial_1_3_size, 8);
+
+    // Test 3D partial indexing
+    TestVpiHandle vh_mem_3d_partial_0 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0]", nullptr);
+    CHECK_RESULT_NZ(vh_mem_3d_partial_0);
+
+    // Should still be RegArray after first index
+    int mem_3d_partial_0_type = vpi_get(vpiType, vh_mem_3d_partial_0);
+    CHECK_RESULT(mem_3d_partial_0_type, vpiRegArray);
+    int mem_3d_partial_0_size = vpi_get(vpiSize, vh_mem_3d_partial_0);
+    CHECK_RESULT(mem_3d_partial_0_size, 4);  // remaining [0:1][0:1] is 2x2=4
+
+    // Continue to second level
+    TestVpiHandle vh_mem_3d_partial_0_1 = vpi_handle_by_index(vh_mem_3d_partial_0, 1);
+    CHECK_RESULT_NZ(vh_mem_3d_partial_0_1);
+
+    int mem_3d_partial_0_1_type = vpi_get(vpiType, vh_mem_3d_partial_0_1);
+    CHECK_RESULT(mem_3d_partial_0_1_type, vpiRegArray);
+
+    // ========== WHITESPACE BETWEEN NAME AND FIRST BRACKET ==========
+
+    // Whitespace before first bracket
+    TestVpiHandle vh_ws_name_bracket = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d [2][3]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_name_bracket);
+    vpi_get_value(vh_ws_name_bracket, &v);
+    CHECK_RESULT(v.value.integer, 19);  // 2*8 + 3
+
+    // Multiple spaces before first bracket
+    TestVpiHandle vh_ws_name_bracket_multi
+        = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d    [5]", nullptr);
+    CHECK_RESULT_NZ(vh_ws_name_bracket_multi);
+    vpi_get_value(vh_ws_name_bracket_multi, &v);
+    CHECK_RESULT(v.value.integer, 5 * 256);
+
+    // ========== ADDITIONAL SYNTAX ERROR TESTS ==========
+
+    // Missing opening bracket (only closing bracket)
+    TestVpiHandle vh_missing_open = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d0][1]", nullptr);
+    CHECK_RESULT_Z(vh_missing_open);
+
+    // Nested brackets
+    TestVpiHandle vh_nested = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[[0]][1]", nullptr);
+    CHECK_RESULT_Z(vh_nested);
+
+    // Negative index (should fail)
+    TestVpiHandle vh_negative = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[-1][0]", nullptr);
+    CHECK_RESULT_Z(vh_negative);
+
+    // Hex index (not supported - should fail)
+    TestVpiHandle vh_hex = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0x2][3]", nullptr);
+    CHECK_RESULT_Z(vh_hex);
+
+    // Expression in index (should fail)
+    TestVpiHandle vh_expr = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1+1][3]", nullptr);
+    CHECK_RESULT_Z(vh_expr);
+
+    // Trailing non-whitespace text after indices
+    TestVpiHandle vh_trailing_text = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0]junk", nullptr);
+    CHECK_RESULT_Z(vh_trailing_text);
+
+    // Double closing bracket
+    TestVpiHandle vh_double_close = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1]]", nullptr);
+    CHECK_RESULT_Z(vh_double_close);
+
     return 0;
 }
 

@@ -59,10 +59,13 @@ extern "C" int mon_check();
 /*verilator public_flat_rw_on*/
    reg [31:0]      delayed;
    reg [31:0]      delayed_mem [16];
-   reg [7:0]       mem_2d[0:3][0:7];
+   reg [7:0]       mem_2d[3:0][7:0];  // Descending indices
    reg [31:0]      mem_1d[0:15];
-   reg [15:0]      mem_3d[0:1][0:1][0:1];
+   reg [15:0]      mem_3d[0:1][1:0][0:1];  // Mixed: asc, desc, asc
    reg [3:0]       simple_packed;
+
+   // Signal with multiple packed dimensions and unpacked dimensions
+   reg [3:0] [7:0] multi_packed[2:0];
 /*verilator public_off*/
    reg             invisible2;
 
@@ -131,6 +134,15 @@ extern "C" int mon_check();
             for (int k = 0; k < 2; k++) begin
                mem_3d[i][j][k] = 16'(((i * 4) + (j * 2) + k));
             end
+         end
+      end
+
+
+
+      // Initialize multi_packed: multi_packed[i][j] = (i * 4) + j
+      for (int i = 0; i < 3; i++) begin
+         for (int j = 0; j < 4; j++) begin
+            multi_packed[i][j] = 8'((i * 4) + j);
          end
       end
 
