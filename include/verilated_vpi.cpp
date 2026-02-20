@@ -2245,21 +2245,16 @@ static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
     return true;
 }
 
-static bool vpi_parse_indices(const std::string& fullname, std::string& basename,
-                              std::vector<PLI_INT32>& indices) {
+static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices) {
     // Check if name has any indices
-    if (fullname.empty()) {
-        basename = fullname;
-        return false;
-    }
+    if (name.empty()) { return false; }
 
     // Find the position of the last ']' (skipping trailing whitespace)
-    size_t last_bracket = fullname.length();
-    while (last_bracket > 0 && isSpaceChar(fullname[last_bracket - 1])) { --last_bracket; }
+    size_t last_bracket = name.length();
+    while (last_bracket > 0 && isSpaceChar(name[last_bracket - 1])) { --last_bracket; }
 
-    if (last_bracket == 0 || fullname[last_bracket - 1] != ']') {
+    if (last_bracket == 0 || name[last_bracket - 1] != ']') {
         // No trailing ']' found
-        basename = fullname;
         return false;
     }
 
@@ -2267,33 +2262,29 @@ static bool vpi_parse_indices(const std::string& fullname, std::string& basename
     size_t end = last_bracket;  // Start at the ']' position
 
     // Skip any trailing whitespace before the first ']'
-    while (end > 0 && isSpaceChar(fullname[end - 1])) { --end; }
+    while (end > 0 && isSpaceChar(name[end - 1])) { --end; }
 
     // Parse indices from right to left
-    while (end > 0 && fullname[end - 1] == ']') {
+    while (end > 0 && name[end - 1] == ']') {
         PLI_INT32 index_val = 0;
-        if (!vpi_parse_single_index(fullname, end, index_val)) {
+        if (!vpi_parse_single_index(name, end, index_val)) {
             // Parse failed - return no indices
-            basename = fullname;
             indices.clear();
             return false;
         }
         indices.push_back(index_val);
 
         // Skip whitespace between bracket groups
-        while (end > 0 && isSpaceChar(fullname[end - 1])) { --end; }
+        while (end > 0 && isSpaceChar(name[end - 1])) { --end; }
     }
 
-    if (indices.empty()) {
-        basename = fullname;
-        return false;
-    }
+    if (indices.empty()) { return false; }
 
     // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
     std::reverse(indices.begin(), indices.end());
 
-    // basename is everything before the first '[' (at position 'end')
-    basename = fullname.substr(0, end);
+    // Truncate name to remove the indices (everything before the first '[')
+    name.erase(end);
 
     return true;
 }
@@ -2307,31 +2298,26 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     VL_DEBUG_IF_PLI(VL_DBG_MSGF("- vpi: vpi_handle_by_name %s %p\n", namep, scope););
 
     // Parse any array indices from the name (e.g., "mem[0][3][2]")
-    std::string fullname{namep};
-    std::string basename;
+    // scopeAndName will be modified in place by vpi_parse_indices to remove the indices
+    std::string scopeAndName = namep;
     std::vector<PLI_INT32> indices;
-    bool has_indices = vpi_parse_indices(fullname, basename, indices);
-
-    // If we found indices, use the basename for the lookup
-    const char* lookup_name = has_indices ? basename.c_str() : namep;
+    bool has_indices = vpi_parse_indices(scopeAndName, indices);
 
     const VerilatedVar* varp = nullptr;
     const VerilatedScope* scopep;
     const VerilatedVpioScope* const voScopep = VerilatedVpioScope::castp(scope);
-    std::string scopeAndName = lookup_name;
-    if (0 == std::strncmp(lookup_name, "$root.", std::strlen("$root."))) {
-        lookup_name += std::strlen("$root.");
-        scopeAndName = lookup_name;
+
+    if (0 == std::strncmp(scopeAndName.c_str(), "$root.", std::strlen("$root."))) {
+        scopeAndName.erase(0, std::strlen("$root."));
     } else if (voScopep) {
         const bool scopeIsPackage = VerilatedVpioPackage::castp(scope) != nullptr;
         scopeAndName
-            = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + lookup_name;
-        lookup_name = const_cast<char*>(scopeAndName.c_str());
+            = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + scopeAndName;
     }
     {
         // This doesn't yet follow the hierarchy in the proper way
         bool isPackage = false;
-        scopep = Verilated::threadContextp()->scopeFind(lookup_name);
+        scopep = Verilated::threadContextp()->scopeFind(scopeAndName.c_str());
         if (scopep) {  // Whole thing found as a scope
             if (scopep->type() == VerilatedScope::SCOPE_MODULE) {
                 return (new VerilatedVpioModule{scopep})->castVpiHandle();
@@ -2341,7 +2327,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
                 return (new VerilatedVpioScope{scopep})->castVpiHandle();
             }
         }
-        std::string bn = scopeAndName;
+        std::string basename = scopeAndName;
         std::string scopename;
         std::string::size_type prevpos = std::string::npos;
         std::string::size_type pos = std::string::npos;
@@ -2366,19 +2352,19 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
         }
         // Do the split
         if (VL_LIKELY(pos != std::string::npos)) {
-            bn.erase(0, pos + (isPackage ? 2 : 1));
+            basename.erase(0, pos + (isPackage ? 2 : 1));
             scopename = scopeAndName.substr(0, pos);
             if (scopename == "$unit") scopename = "\\$unit ";
         }
         if (prevpos == std::string::npos) {
             // scopename is a toplevel (no '.' separator), so search in our TOP ports first.
             scopep = Verilated::threadContextp()->scopeFind("TOP");
-            if (scopep) varp = scopep->varFind(bn.c_str());
+            if (scopep) varp = scopep->varFind(basename.c_str());
         }
         if (!varp) {
             scopep = Verilated::threadContextp()->scopeFind(scopename.c_str());
             if (!scopep) return nullptr;
-            varp = scopep->varFind(bn.c_str());
+            varp = scopep->varFind(basename.c_str());
         }
     }
     if (!varp) return nullptr;
@@ -2393,10 +2379,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
 
     // If we have indices, apply them using vpi_handle_by_multi_index
     if (has_indices && !indices.empty()) {
-        // Convert vector to array for vpi_handle_by_multi_index
-        std::vector<PLI_INT32> indices_array = indices;
-        result_handle
-            = vpi_handle_by_multi_index(result_handle, indices_array.size(), indices_array.data());
+        result_handle = vpi_handle_by_multi_index(result_handle, indices.size(), indices.data());
     }
 
     return result_handle;
