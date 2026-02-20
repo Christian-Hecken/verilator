@@ -4106,29 +4106,14 @@ vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT3
     if (VL_UNLIKELY(!index_array)) return nullptr;
     if (VL_UNLIKELY(num_index <= 0)) return nullptr;
 
-    // Cast to VerilatedVpioVar
-    const VerilatedVpioVar* const varop_start = VerilatedVpioVar::castp(obj);
-    if (VL_UNLIKELY(!varop_start)) {
-        VL_VPI_INTERNAL_(__FILE__, __LINE__, "%s : can't resolve handle", __func__);
-        return nullptr;
-    }
-
-    // Apply each index sequentially
-    VerilatedVpioVar* varop = const_cast<VerilatedVpioVar*>(varop_start);
+    // Apply each index sequentially by calling vpi_handle_by_index
+    vpiHandle result_handle = obj;
     for (PLI_INT32 i = 0; i < num_index; ++i) {
-        // Check if we can index further (no dimensions left to index)
-        if (VL_UNLIKELY(varop->indexedDim() + 1 > varop->varp()->dims() - 1)) { return nullptr; }
-
-        // Check index is within bounds
-        if (VL_UNLIKELY(index_array[i] < varop->rangep()->low()
-                        || index_array[i] > varop->rangep()->high())) {
+        result_handle = vpi_handle_by_index(result_handle, index_array[i]);
+        if (VL_UNLIKELY(!result_handle)) {
             return nullptr;
         }
-
-        // Apply the index
-        varop = varop->withIndex(index_array[i]);
-        if (VL_UNLIKELY(!varop)) { return nullptr; }
     }
 
-    return varop->castVpiHandle();
+    return result_handle;
 }
