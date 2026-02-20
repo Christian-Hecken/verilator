@@ -33,6 +33,7 @@
 
 #include "vltstd/vpi_user.h"
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 #include <list>
@@ -41,7 +42,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <algorithm>
 
 //======================================================================
 // Internal constants
@@ -2265,7 +2265,8 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
         scopeAndName = lookup_name;
     } else if (voScopep) {
         const bool scopeIsPackage = VerilatedVpioPackage::castp(scope) != nullptr;
-        scopeAndName = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + lookup_name;
+        scopeAndName
+            = std::string{voScopep->fullname()} + (scopeIsPackage ? "" : ".") + lookup_name;
         lookup_name = const_cast<char*>(scopeAndName.c_str());
     }
     {
@@ -4094,8 +4095,7 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
     }
 }
 
-vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index,
-                                    PLI_INT32* index_array) {
+vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT32* index_array) {
     // Get handle by applying multiple indices at once
     VL_DEBUG_IF_PLI(VL_DBG_MSGF("- vpi: vpi_handle_by_multi_index %p %d\n", obj, num_index););
     VerilatedVpiImp::assertOneCheck();
@@ -4117,9 +4117,7 @@ vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index,
     VerilatedVpioVar* varop = const_cast<VerilatedVpioVar*>(varop_start);
     for (PLI_INT32 i = 0; i < num_index; ++i) {
         // Check if we can index further (no dimensions left to index)
-        if (VL_UNLIKELY(varop->indexedDim() + 1 > varop->varp()->dims() - 1)) {
-            return nullptr;
-        }
+        if (VL_UNLIKELY(varop->indexedDim() + 1 > varop->varp()->dims() - 1)) { return nullptr; }
 
         // Check index is within bounds
         if (VL_UNLIKELY(index_array[i] < varop->rangep()->low()
@@ -4129,9 +4127,7 @@ vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index,
 
         // Apply the index
         varop = varop->withIndex(index_array[i]);
-        if (VL_UNLIKELY(!varop)) {
-            return nullptr;
-        }
+        if (VL_UNLIKELY(!varop)) { return nullptr; }
     }
 
     return varop->castVpiHandle();

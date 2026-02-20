@@ -181,9 +181,10 @@ extern "C" int mon_check() {
         uint64_t val_by_name = ((uint64_t)vv[1].aval << 32) | vv[0].aval;
 
         if (val_multi != val_by_name) {
-            printf("ERROR: vpi_handle_by_name[2] and vpi_handle_by_multi_index values differ: 0x%lx "
-                   "vs 0x%lx\n",
-                   val_by_name, val_multi);
+            printf(
+                "ERROR: vpi_handle_by_name[2] and vpi_handle_by_multi_index values differ: 0x%lx "
+                "vs 0x%lx\n",
+                val_by_name, val_multi);
             errors++;
         } else {
             printf("SUCCESS: vpi_handle_by_name[2] matches multi-index result: 0x%lx\n",
@@ -204,7 +205,8 @@ extern "C" int mon_check() {
         int val_by_name = v.value.integer;
 
         if (val_by_name != 11) {
-            printf("ERROR: mem_2d[1][3] via vpi_handle_by_name expected 11, got %d\n", val_by_name);
+            printf("ERROR: mem_2d[1][3] via vpi_handle_by_name expected 11, got %d\n",
+                   val_by_name);
             errors++;
         } else {
             printf("SUCCESS: mem_2d[1][3] via vpi_handle_by_name = %d\n", val_by_name);
