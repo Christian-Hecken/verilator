@@ -44,6 +44,8 @@ extern "C" int mon_check();
    reg [31:0]      half_count   /*verilator public_flat_rd */ = 0;
    reg [31:0]      delayed      /*verilator public_flat_rw */;
    reg [31:0]      delayed_mem [16] /*verilator public_flat_rw */;
+   reg [7:0]       mem_2d[0:3][0:7]  /*verilator public_flat_rw */;
+   reg [31:0]      mem_1d[0:15]      /*verilator public_flat_rw */;
 
    reg [7:0]       text_byte    /*verilator public_flat_rw @(posedge clk) */;
    reg [15:0]      text_half    /*verilator public_flat_rw @(posedge clk) */;
@@ -91,6 +93,18 @@ extern "C" int mon_check();
       str1 = "hello";
 
       rev = 12'habc;
+
+      // Initialize mem_2d: mem_2d[i][j] = i*8 + j
+      for (int i = 0; i < 4; i++) begin
+         for (int j = 0; j < 8; j++) begin
+            mem_2d[i][j] = 8'(((i * 8) + j));
+         end
+      end
+
+      // Initialize mem_1d: mem_1d[i] = i * 256
+      for (int i = 0; i < 16; i++) begin
+         mem_1d[i] = i * 256;
+      end
 
 `ifdef VERILATOR
       status = $c32("mon_check()");
