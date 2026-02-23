@@ -178,7 +178,6 @@ module t;
       `checkh(wide_asc, 80'h1234_56789abc_dcb0ffe5);
     end
 
-`ifndef VERILATOR  // Unsupported
     begin : memory_1d
       $display("= uvm_hdl_read/deposit 1D memory");
       i = uvm_hdl_check_path("t.mem1d[0]");
@@ -220,6 +219,22 @@ module t;
       i = uvm_hdl_deposit("t.mem2d[2][3]", lval);
       `checkh(i, 1);
       `checkh(mem2d[2][3], 32'h2300);
+    end
+
+`ifndef VERILATOR  // TODO: Verilator doesn't yet support unpacked array slice via VPI/UVM
+    begin : memory_2d_slice
+      $display("= uvm_hdl_read/deposit 2D memory slice");
+      // Test unpacked array slice syntax through uvm_hdl:
+      // mem2d[1:2][3] should select {mem2d[1][3], mem2d[2][3]} as a slice
+      // on the first unpacked dimension, with scalar index on the second.
+      // This is IEEE 1800-2017 Section 7.4.6 unpacked array slice syntax.
+      mem2d[1][3] = 32'hAAAA_1111;
+      mem2d[2][3] = 32'hBBBB_2222;
+      lval = '0;
+      i = uvm_hdl_read("t.mem2d[1:2][3]", lval);
+      `checkh(i, 1);
+      // Expecting to read mem2d[1][3] = 0xAAAA_1111
+      `checkh(lval[31:0], 32'hAAAA_1111);
     end
 `endif
 
