@@ -2456,24 +2456,48 @@ static bool vpi_parse_bit_range(const std::string& fullname, size_t& end, VlVpiB
 
     const std::string content = fullname.substr(indexStart, indexEnd - indexStart);
 
-    // Must contain ':' to be a bit range
+    // Must contain ':' to be a bit range or indexed part-select
     const size_t colon_pos = content.find(':');
     if (colon_pos == std::string::npos) return false;
 
-    // Reject '+:' or '-:' (indexed part-select).
-    // Check if the non-whitespace character immediately before ':' is '+' or '-'.
+    // Check for indexed part-select: [base +: width] or [base -: width].
+    // The non-whitespace character immediately before ':' determines the type.
+    char partsel_op = 0;  // '+' or '-' if indexed part-select, 0 for plain range
+    size_t op_pos = 0;  // position of the '+' or '-' operator
     {
         size_t cp = colon_pos;
         while (cp > 0 && (content[cp - 1] == ' ' || content[cp - 1] == '\t')) --cp;
-        if (cp > 0 && (content[cp - 1] == '+' || content[cp - 1] == '-')) return false;
+        if (cp > 0 && (content[cp - 1] == '+' || content[cp - 1] == '-')) {
+            partsel_op = content[cp - 1];
+            op_pos = cp - 1;
+        }
     }
 
-    // Evaluate hi and lo as constant arithmetic expressions
-    const std::string hi_str = content.substr(0, colon_pos);
-    const std::string lo_str = content.substr(colon_pos + 1);
     long hi_val, lo_val;
-    if (!vpi_eval_const_expr(hi_str, hi_val, scope)) return false;
-    if (!vpi_eval_const_expr(lo_str, lo_val, scope)) return false;
+    if (partsel_op) {
+        // Indexed part-select: [base +: width] or [base -: width]
+        const std::string base_str = content.substr(0, op_pos);
+        const std::string width_str = content.substr(colon_pos + 1);
+        long base_val, width_val;
+        if (!vpi_eval_const_expr(base_str, base_val, scope)) return false;
+        if (!vpi_eval_const_expr(width_str, width_val, scope)) return false;
+        if (width_val <= 0) return false;
+        if (partsel_op == '+') {
+            // [base +: width] -> bits base to base+width-1
+            lo_val = base_val;
+            hi_val = base_val + width_val - 1;
+        } else {
+            // [base -: width] -> bits base down to base-width+1
+            hi_val = base_val;
+            lo_val = base_val - width_val + 1;
+        }
+    } else {
+        // Plain range: [hi:lo]
+        const std::string hi_str = content.substr(0, colon_pos);
+        const std::string lo_str = content.substr(colon_pos + 1);
+        if (!vpi_eval_const_expr(hi_str, hi_val, scope)) return false;
+        if (!vpi_eval_const_expr(lo_str, lo_val, scope)) return false;
+    }
 
     bitRange.hi = static_cast<int32_t>(hi_val);
     bitRange.lo = static_cast<int32_t>(lo_val);

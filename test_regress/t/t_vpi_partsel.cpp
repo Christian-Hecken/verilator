@@ -532,22 +532,257 @@ static int test_arithmetic_exprs() {
         printf("  mem[3-1][8*2-1:8] size=%d value=0x%02x OK\n", size, val);
     }
 
-    // --- Verify +: and -: are still rejected ---
+    // --- Indexed part-select with +: and -: ---
+
+    // sig_desc[8+:8] should be equivalent to [15:8] -> 0xBE
     {
         TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[8+:8]", nullptr);
-        if (vh) {
-            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+:8]\") returned !NULL\n");
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+:8]\") returned NULL\n");
             return __LINE__;
         }
-        printf("  sig_desc[8+:8] = NULL (indexed part-select rejected) OK\n");
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[8+:8] size=%d value=0x%02x OK\n", size, val);
     }
+
+    // sig_desc[15-:8] should be equivalent to [15:8] -> 0xBE
     {
         TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15-:8]", nullptr);
-        if (vh) {
-            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[15-:8]\") returned !NULL\n");
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[15-:8]\") returned NULL\n");
             return __LINE__;
         }
-        printf("  sig_desc[15-:8] = NULL (indexed part-select rejected) OK\n");
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[15-:8] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // sig_desc[0+:16] should be equivalent to [15:0] -> 0xBEEF
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[0+:16]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[0+:16]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 16) {
+            printf("%%Error: vpiSize = %d, expected 16\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != (int)0xBEEF) {
+            printf("%%Error: value = 0x%04x, expected 0xBEEF\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[0+:16] size=%d value=0x%04x OK\n", size, val);
+    }
+
+    // sig_desc[31-:16] should be equivalent to [31:16] -> 0xDEAD
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31-:16]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[31-:16]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 16) {
+            printf("%%Error: vpiSize = %d, expected 16\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != (int)0xDEAD) {
+            printf("%%Error: value = 0x%04x, expected 0xDEAD\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[31-:16] size=%d value=0x%04x OK\n", size, val);
+    }
+
+    // +: with arithmetic: sig_desc[BYTE+:BYTE] -> [15:8] = 0xBE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[BYTE+:BYTE]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[BYTE+:BYTE]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[BYTE+:BYTE] value=0x%02x OK\n", val);
+    }
+
+    // +: with array index: mem[1][0+:8] -> low byte of 0xBBBB1111 = 0x11
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[1][0+:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[1][0+:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0x11) {
+            printf("%%Error: value = 0x%02x, expected 0x11\n", val);
+            return __LINE__;
+        }
+        printf("  mem[1][0+:8] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // --- Edge cases for +:/−: vs arithmetic disambiguation ---
+
+    // "3+5:8" — the '+' is NOT immediately before ':', so it's a plain range [8:8]
+    // sig_desc = 0xDEADBEEF, bit 8 = 1 (0xEF = 1110_1111, bit 8 is in 0xBE = 1011_1110)
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[3+5:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[3+5:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 1) {
+            printf("%%Error: vpiSize = %d, expected 1\n", size);
+            return __LINE__;
+        }
+        // Bit 8 of 0xDEADBEEF: 0xBE = 1011_1110, bit 0 of that byte = 0
+        int val = vpi_get_int(vh);
+        if (val != 0) {
+            printf("%%Error: value = %d, expected 0\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[3+5:8] (plain range [8:8]) size=%d value=%d OK\n", size, val);
+    }
+
+    // "3+5+:8" — the '+' IS immediately before ':', so it's [8 +: 8] = [15:8] -> 0xBE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[3+5+:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[3+5+:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[3+5+:8] (base=8, +: 8) size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // "3+5-:8" — '-' IS immediately before ':', so it's [8 -: 8] = [8:1]
+    // Bits [8:1] of 0xDEADBEEF: ...1011_1110_1110_1111, bits 8..1 = 0x77
+    //   bit 8=0, bit 7=1, bit 6=1, bit 5=1, bit 4=0, bit 3=1, bit 2=1, bit 1=1
+    //   = 0111_0111 = 0x77
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[3+5-:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[3+5-:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0x77) {
+            printf("%%Error: value = 0x%02x, expected 0x77\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[3+5-:8] (base=8, -: 8) size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // Whitespace tolerance: "8 +: 8" with spaces around +: operator
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[ 8 +: 8 ]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[ 8 +: 8 ]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[ 8 +: 8 ] (whitespace) value=0x%02x OK\n", val);
+    }
+
+    // --- Edge cases that should fail ---
+
+    // Width of 0 in +: should fail
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[8+:0]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+:0]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[8+:0] = NULL (zero width rejected) OK\n");
+    }
+
+    // Negative width in -: should fail
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[8+:-1]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+:-1]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[8+:-1] = NULL (negative width rejected) OK\n");
+    }
+
+    // -: that results in out-of-range bits should fail
+    // [2 -: 8] -> [2:-5], lo=-5 is below signal range [31:0]
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[2-:8]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[2-:8]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[2-:8] = NULL (out of range: lo=-5) OK\n");
+    }
+
+    // +: that results in out-of-range bits should fail
+    // [28 +: 8] -> [35:28], hi=35 is above signal range [31:0]
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[28+:8]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[28+:8]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[28+:8] = NULL (out of range: hi=35) OK\n");
+    }
+
+    // +: on unpacked dimension should fail (existing guard)
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[0+:2]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[0+:2]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  mem[0+:2] = NULL (unpacked +: rejected) OK\n");
     }
 
     return 0;
