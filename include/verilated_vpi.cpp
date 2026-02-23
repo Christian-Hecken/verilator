@@ -2228,6 +2228,102 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
 // Helper: skip whitespace in string
 static inline bool isSpaceChar(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; }
 
+// Evaluate a constant integer arithmetic expression.
+// Supports: +, -, *, /, unary +/-, parentheses, and decimal integers.
+// Uses recursive descent: expr → term (('+' | '-') term)*
+//                         term → factor (('*' | '/') factor)*
+//                         factor → ['+' | '-'] factor | atom
+//                         atom → '(' expr ')' | number
+
+static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result);
+
+static void vpi_eval_skip_ws(const char* s, size_t len, size_t& pos) {
+    while (pos < len && (s[pos] == ' ' || s[pos] == '\t')) ++pos;
+}
+
+static bool vpi_eval_atom(const char* s, size_t len, size_t& pos, long& result) {
+    vpi_eval_skip_ws(s, len, pos);
+    if (pos >= len) return false;
+    if (s[pos] == '(') {
+        ++pos;
+        if (!vpi_eval_expr(s, len, pos, result)) return false;
+        vpi_eval_skip_ws(s, len, pos);
+        if (pos >= len || s[pos] != ')') return false;
+        ++pos;
+        return true;
+    }
+    if (!isdigit(static_cast<unsigned char>(s[pos]))) return false;
+    char* endp;
+    result = std::strtol(s + pos, &endp, 10);
+    pos = static_cast<size_t>(endp - s);
+    return true;
+}
+
+static bool vpi_eval_factor(const char* s, size_t len, size_t& pos, long& result) {
+    vpi_eval_skip_ws(s, len, pos);
+    if (pos >= len) return false;
+    if (s[pos] == '+') {
+        ++pos;
+        return vpi_eval_factor(s, len, pos, result);
+    }
+    if (s[pos] == '-') {
+        ++pos;
+        if (!vpi_eval_factor(s, len, pos, result)) return false;
+        result = -result;
+        return true;
+    }
+    return vpi_eval_atom(s, len, pos, result);
+}
+
+static bool vpi_eval_term(const char* s, size_t len, size_t& pos, long& result) {
+    if (!vpi_eval_factor(s, len, pos, result)) return false;
+    while (true) {
+        vpi_eval_skip_ws(s, len, pos);
+        if (pos >= len) break;
+        const char op = s[pos];
+        if (op != '*' && op != '/') break;
+        ++pos;
+        long rhs;
+        if (!vpi_eval_factor(s, len, pos, rhs)) return false;
+        if (op == '*')
+            result *= rhs;
+        else {
+            if (rhs == 0) return false;
+            result /= rhs;
+        }
+    }
+    return true;
+}
+
+static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result) {
+    if (!vpi_eval_term(s, len, pos, result)) return false;
+    while (true) {
+        vpi_eval_skip_ws(s, len, pos);
+        if (pos >= len) break;
+        const char op = s[pos];
+        if (op != '+' && op != '-') break;
+        ++pos;
+        long rhs;
+        if (!vpi_eval_term(s, len, pos, rhs)) return false;
+        if (op == '+')
+            result += rhs;
+        else
+            result -= rhs;
+    }
+    return true;
+}
+
+// Evaluate a constant integer arithmetic expression string.
+// Returns true if the entire string was consumed and evaluated successfully.
+static bool vpi_eval_const_expr(const std::string& str, long& result) {
+    const char* const s = str.c_str();
+    const size_t len = str.length();
+    size_t pos = 0;
+    if (!vpi_eval_expr(s, len, pos, result)) return false;
+    vpi_eval_skip_ws(s, len, pos);
+    return pos == len;  // Must have consumed the entire string
+}
+
 // Parse a single trailing index in brackets with optional whitespace: [ num ].
 // The string 'fullname' should have fullname[end-1] == ']'.
 // Returns true and sets index if successful, returns false on error.
@@ -2270,22 +2366,15 @@ static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
         return false;
     }
 
-    // Check for ':' or '+' (range or other special notation)
-    std::string index_str = fullname.substr(indexStart, indexEnd - indexStart);
-    for (char c : index_str) {
-        if (c == ':' || c == '+') {
-            // Range notation [high:low] or increment [base+:width] - not supported
-            return false;
-        }
-    }
+    // Extract content and evaluate as a constant expression
+    const std::string index_str = fullname.substr(indexStart, indexEnd - indexStart);
 
-    // Try to parse as decimal integer
-    char* endp = nullptr;
-    long val = std::strtol(index_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') {
-        // Not a valid integer
-        return false;
-    }
+    // Reject ':' — indicates a bit range or part-select, not a single index
+    if (index_str.find(':') != std::string::npos) return false;
+
+    // Evaluate as constant arithmetic expression (supports +, -, *, /, parens)
+    long val;
+    if (!vpi_eval_const_expr(index_str, val)) return false;
 
     // Successful parse
     index_val = static_cast<PLI_INT32>(val);
@@ -2334,19 +2423,20 @@ static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
     const size_t colon_pos = content.find(':');
     if (colon_pos == std::string::npos) return false;
 
-    // Reject '+:' or '-:' (indexed part-select)
-    if (content.find('+') != std::string::npos || content.find('-') != std::string::npos)
-        return false;
+    // Reject '+:' or '-:' (indexed part-select).
+    // Check if the non-whitespace character immediately before ':' is '+' or '-'.
+    {
+        size_t cp = colon_pos;
+        while (cp > 0 && (content[cp - 1] == ' ' || content[cp - 1] == '\t')) --cp;
+        if (cp > 0 && (content[cp - 1] == '+' || content[cp - 1] == '-')) return false;
+    }
 
-    // Parse hi and lo
+    // Evaluate hi and lo as constant arithmetic expressions
     const std::string hi_str = content.substr(0, colon_pos);
     const std::string lo_str = content.substr(colon_pos + 1);
-    char* endp = nullptr;
-    const long hi_val = std::strtol(hi_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') return false;
-    endp = nullptr;
-    const long lo_val = std::strtol(lo_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') return false;
+    long hi_val, lo_val;
+    if (!vpi_eval_const_expr(hi_str, hi_val)) return false;
+    if (!vpi_eval_const_expr(lo_str, lo_val)) return false;
 
     bitRange.hi = static_cast<int32_t>(hi_val);
     bitRange.lo = static_cast<int32_t>(lo_val);

@@ -329,8 +329,7 @@ static int test_partsel_write() {
     // sig_desc starts as 0xDEAD_BEEF
     // Write 0x42 to [15:8], result should be 0xDEAD_42EF
     {
-        TestVpiHandle vh_partsel
-            = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
+        TestVpiHandle vh_partsel = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
         if (!vh_partsel) {
             printf("%%Error: vpi_handle_by_name(\"t.sig_desc[15:8]\") returned NULL\n");
             return __LINE__;
@@ -363,8 +362,7 @@ static int test_partsel_write() {
 
     // Write 0xFF to [31:24], result should be 0xFFAD_42EF
     {
-        TestVpiHandle vh_partsel
-            = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31:24]", nullptr);
+        TestVpiHandle vh_partsel = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31:24]", nullptr);
         if (!vh_partsel) {
             printf("%%Error: vpi_handle_by_name(\"t.sig_desc[31:24]\") returned NULL\n");
             return __LINE__;
@@ -391,8 +389,7 @@ static int test_partsel_array_write() {
     printf("== test_partsel_array_write ==\n");
 
     {
-        TestVpiHandle vh_partsel
-            = vpi_handle_by_name((PLI_BYTE8*)"t.mem[3][7:0]", nullptr);
+        TestVpiHandle vh_partsel = vpi_handle_by_name((PLI_BYTE8*)"t.mem[3][7:0]", nullptr);
         if (!vh_partsel) {
             printf("%%Error: vpi_handle_by_name(\"t.mem[3][7:0]\") returned NULL\n");
             return __LINE__;
@@ -413,6 +410,144 @@ static int test_partsel_array_write() {
             return __LINE__;
         }
         printf("  Write 0xAB to mem[3][7:0] -> full = 0x%08x OK\n", full_val);
+    }
+
+    return 0;
+}
+
+//======================================================================
+// Test 8: Arithmetic expressions in indices and bit-ranges
+// sig_desc = 32'hDEAD_BEEF = 0xDEADBEEF
+static int test_arithmetic_exprs() {
+    printf("== test_arithmetic_exprs ==\n");
+
+    // --- Arithmetic in bit-range bounds ---
+
+    // [8+7:8] should be equivalent to [15:8] -> 0xBE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[8+7:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+7:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[8+7:8] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // [4*8-1:3*8] should be equivalent to [31:24] -> 0xDE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[4*8-1:3*8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[4*8-1:3*8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xDE) {
+            printf("%%Error: value = 0x%02x, expected 0xDE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[4*8-1:3*8] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // [(16-1):(24/3)] should be equivalent to [15:8] -> 0xBE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[(16-1):(24/3)]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[(16-1):(24/3)]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xBE) {
+            printf("%%Error: value = 0x%02x, expected 0xBE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[(16-1):(24/3)] value=0x%02x OK\n", val);
+    }
+
+    // --- Arithmetic in array index ---
+
+    // mem[1+1] should be same as mem[2], which has value 0xCCCC2222
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[1+1]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[1+1]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != (int)0xCCCC2222) {
+            printf("%%Error: value = 0x%08x, expected 0xCCCC2222\n", val);
+            return __LINE__;
+        }
+        printf("  mem[1+1] value=0x%08x OK\n", val);
+    }
+
+    // mem[6/2] should be same as mem[3], which has value 0xDDDD3333
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[6/2]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[6/2]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != (int)0xDDDD3333) {
+            printf("%%Error: value = 0x%08x, expected 0xDDDD3333\n", val);
+            return __LINE__;
+        }
+        printf("  mem[6/2] value=0x%08x OK\n", val);
+    }
+
+    // --- Combined: arithmetic in both index and bit-range ---
+
+    // mem[3-1][8*2-1:8] should be mem[2][15:8] = byte 1 of 0xCCCC2222 = 0x22
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[3-1][8*2-1:8]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[3-1][8*2-1:8]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0x22) {
+            printf("%%Error: value = 0x%02x, expected 0x22\n", val);
+            return __LINE__;
+        }
+        printf("  mem[3-1][8*2-1:8] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // --- Verify +: and -: are still rejected ---
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[8+:8]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[8+:8]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[8+:8] = NULL (indexed part-select rejected) OK\n");
+    }
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15-:8]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[15-:8]\") returned !NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[15-:8] = NULL (indexed part-select rejected) OK\n");
     }
 
     return 0;
@@ -444,6 +579,7 @@ extern "C" int mon_check() {
     if (int status = test_partsel_ascending()) return status;
     if (int status = test_partsel_with_array()) return status;
     if (int status = test_partsel_out_of_range()) return status;
+    if (int status = test_arithmetic_exprs()) return status;
     if (int status = test_partsel_write()) return status;
     if (int status = test_partsel_array_write()) return status;
     if (int status = test_partsel_on_unpacked()) return status;

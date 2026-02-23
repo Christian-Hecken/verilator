@@ -1688,10 +1688,15 @@ int _mon_check_multi_index() {
         CHECK_RESULT_Z(vh1);
     }
 
-    // Expression in index (should fail)
+    // Expression in index (now supported - arithmetic evaluation)
     {
         TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1+1][3]", nullptr);
-        CHECK_RESULT_Z(vh1);
+        CHECK_RESULT_NZ(vh1);
+        // mem_2d[2][3] = 2*8+3 = 19 = 0x13
+        s_vpi_value val;
+        val.format = vpiIntVal;
+        vpi_get_value(vh1, &val);
+        CHECK_RESULT(val.value.integer, 0x13);
     }
 
     // Trailing non-whitespace text after indices
