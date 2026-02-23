@@ -87,162 +87,24 @@ static int uvm_hdl_max_width() {
 }
 
 /*
- * Internals: Parse the trailing bracket in a name to extract bit range.
- * Input: path string like "signal[31:0]" or "signal[5]"
- * Output: hi, lo (bit positions), returns true if a bit range was found
- *
- * Note: This function handles ONLY the LAST bracket pair as a bit range.
- * Multi-dimensional array indexing (e.g., mem[0][3]) is handled by
- * vpi_handle_by_name() in the VPI layer, which now supports array indices.
- *
- * For combined access like mem[0][3][31:0]:
- * 1. vpi_handle_by_name("mem[0][3]") gets the array element (via VPI's vpi_parse_indices)
- * 2. This function would then parse [31:0] as the bit range
- * 3. The bit range is applied to the array element handle
- */
-static int uvm_hdl_parse_bitrange(char* path, int* hi_ptr, int* lo_ptr) {
-  char* path_ptr;
-  int temp;
-
-  // Find the last ']' in the path
-  path_ptr = (char*)(path + strlen(path) - 1);
-  if (*path_ptr != ']') return 0;  // No closing bracket
-
-  // Work backwards to find '[' and any ':' (for range notation)
-  while (path_ptr != path && *path_ptr != ':' && *path_ptr != '[') { --path_ptr; }
-  if (path_ptr == path) return 0;  // Didn't find opening bracket
-
-  // Parse the first index (or only index if no ':')
-  *lo_ptr = *hi_ptr = atoi(path_ptr + 1);
-
-  // Check if there's a colon indicating a range [hi:lo]
-  if (*path_ptr == ':') {
-    --path_ptr;  // Back over ':'
-
-    // Find the opening bracket
-    while (path_ptr != path && *path_ptr != '[') { --path_ptr; }
-    *hi_ptr = atoi(path_ptr + 1);
-    if (path_ptr == path) return 0;
-  }
-
-  // Ensure hi >= lo for normalized range
-  if (*lo_ptr > *hi_ptr) {
-    temp = *lo_ptr;
-    *lo_ptr = *hi_ptr;
-    *hi_ptr = temp;
-  }
-
-  return 1;  // Successfully parsed a bit range
-}
-
-/*
- * Internals: Given a path, look at the path name and determine
- * the handle and any partsel's needed to access it.
- *
- * Responsibilities:
- * - Multi-dimensional array indexing (e.g., mem[0][3][2]) is handled by
- *   vpi_handle_by_name(), which now supports this natively via vpi_parse_indices.
- * - This function extracts and handles bit range selection (e.g., signal[31:0])
- *   from the trailing brackets, and applies them as partsel operations.
- *
- * Examples:
- * - "top.myvar" -> direct VPI lookup
- * - "top.mem[0][3]" -> vpi_handle_by_name handles array indices
- * - "top.signal[31:0]" -> vpi_handle_by_name gets signal, then we apply bitrange
- * - "top.mem[0][3][31:0]" -> vpi_handle_by_name gets mem[0][3], then we apply bitrange
- */
-static vpiHandle uvm_hdl_handle_by_name_partsel(char *path, int *is_partsel_ptr, int *hi_ptr,
-                                                int *lo_ptr) {
-  vpiHandle r;
-  char *path_base_ptr;
-  *is_partsel_ptr = 0;
-
-  if (!path || !path[0]) return 0;
-
-  // First, try direct VPI lookup. This now works for:
-  // - Simple names: "signal"
-  // - Hierarchical: "top.module.varname" 
-  // - Array indices: "mem[0][3]" (handled by vpi_parse_indices in VPI layer)
-  r = vpi_handle_by_name(path, 0);
-  if (r) return r;
-
-  // If direct lookup failed, check if there's a bit range in trailing brackets
-  // (The VPI layer's vpi_parse_indices handles array indices, not bit ranges)
-  if (!uvm_hdl_parse_bitrange(path, hi_ptr, lo_ptr)) {
-    // No bit range found and direct lookup failed
-    return 0;
-  }
-
-  // We found a bit range - extract the base name without the bit range
-  // Find the position of the '[' that starts the bit range
-  char* bracket_pos = (char*)(path + strlen(path) - 1);
-  while (bracket_pos != path && *bracket_pos != '[') { --bracket_pos; }
-  if (bracket_pos == path) return 0;
-
-  path_base_ptr = strndup(path, (bracket_pos - path));
-
-  // Now try VPI lookup on the base name (which may have array indices, now supported!)
-  r = vpi_handle_by_name(path_base_ptr, 0);
-  if (!r) return 0;
-
-  // Mark that this is a partsel operation
-  *is_partsel_ptr = 1;
-
-  {
-    vpiHandle rh;
-    s_vpi_value value;
-    int req_width_m1;
-    int decl_ranged = 0;
-    int decl_lo;
-    int decl_hi;
-    int decl_left = -1;
-    int decl_right = -1;
-    rh = vpi_handle(vpiLeftRange, r);
-    if (rh) {
-      value.format = vpiIntVal;
-      vpi_get_value(rh, &value);
-      decl_left = value.value.integer;
-      vpi_release_handle(rh);
-    }
-    rh = vpi_handle(vpiRightRange, r);
-    if (rh) {
-      value.format = vpiIntVal;
-      vpi_get_value(rh, &value);
-      decl_ranged = 1;
-      decl_right = value.value.integer;
-      vpi_release_handle(rh);
-    }
-    if (!decl_ranged) {
-      // vpi_printf((PLI_BYTE8 *)"Outside declaration '%s' range %d:%d\n",
-      //            path, decl_left, decl_right);
-      return 0;
-    }
-    // vpi_printf((PLI_BYTE8 *)"%s:%d: req %d:%d decl %d:%d for '%s'\n",
-    //            __FILE__, __LINE__, *hi_ptr, *lo_ptr, decl_left, decl_right, path);
-    decl_lo = (decl_left > decl_right) ? decl_right : decl_left;
-    decl_hi = (decl_left > decl_right) ? decl_left : decl_right;
-    if (*lo_ptr < decl_lo) return 0;
-    if (*hi_ptr > decl_hi) return 0;
-    req_width_m1 = *hi_ptr - *lo_ptr;
-    *lo_ptr = (decl_left > decl_right) ? (*lo_ptr - decl_lo) : (decl_right - *hi_ptr);
-    *hi_ptr = *lo_ptr + req_width_m1;
-  }
-  return r;
-}
-
-/*
  * Given a path, look the path name up using the PLI,
  * and set it to 'value'.
+ *
+ * vpi_handle_by_name() now handles all name resolution including:
+ * - Hierarchical paths: "top.module.signal"
+ * - Array indices: "mem[0][3]" (via vpi_parse_indices)
+ * - Bit range part-selects: "signal[15:8]" (via withPartSelect)
+ * - Combined: "mem[0][3][15:8]"
+ * The returned handle's vpiSize reflects the selected width.
  */
 static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
   vpiHandle r;
   s_vpi_value value_s = {vpiIntVal, {0}};
   s_vpi_time time_s = {vpiSimTime, 0, 0, 0.0};
-  int is_partsel, hi, lo;
   int size;
   static int s_maxsize = -1;
 
-  r = uvm_hdl_handle_by_name_partsel(path, &is_partsel, &hi, &lo);
+  r = vpi_handle_by_name(path, 0);
   if (r == 0) {
     m_uvm_error("UVM/DPI/HDL_SET",
                 "set: unable to locate hdl path (%s)\n Either the name is incorrect, "
@@ -251,34 +113,21 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
     return 0;
   }
 
-  if (!is_partsel) {
-    value_s.format = vpiVectorVal;
-    value_s.value.vector = value;
-    vpi_put_value(r, &value_s, &time_s, flag);
-  } else {
-    if (s_maxsize == -1) s_maxsize = uvm_hdl_max_width();
-    size = vpi_get(vpiSize, r);
-    if (size > s_maxsize) {
-      m_uvm_error("UVM/DPI/VLOG_PUT",
-                  "hdl path '%s' is %0d bits, but the maximum size is %0d.  "
-                  "You can increase the maximum via a compile-time flag: "
-                  "+define+UVM_HDL_MAX_WIDTH=<value>",
-                  path, size, s_maxsize);
-      vpi_release_handle(r);
-      return 0;
-    }
-
-    value_s.format = vpiVectorVal;
-    vpi_get_value(r, &value_s);
-
-    for (int i = 0; i < (((hi - lo + 1) / 32) + 1); ++i) {
-      int subsize = hi - (lo + (i << 5)) + 1;
-      if (subsize > 32) subsize = 32;
-      svPutPartselLogic(&value_s.value.vector[i], value[i], lo + (i << 5), subsize);
-    }
-    vpi_put_value(r, &value_s, &time_s, flag);
+  if (s_maxsize == -1) s_maxsize = uvm_hdl_max_width();
+  size = vpi_get(vpiSize, r);
+  if (size > s_maxsize) {
+    m_uvm_error("UVM/DPI/VLOG_PUT",
+                "hdl path '%s' is %0d bits, but the maximum size is %0d.  "
+                "You can increase the maximum via a compile-time flag: "
+                "+define+UVM_HDL_MAX_WIDTH=<value>",
+                path, size, s_maxsize);
+    vpi_release_handle(r);
+    return 0;
   }
 
+  value_s.format = vpiVectorVal;
+  value_s.value.vector = value;
+  vpi_put_value(r, &value_s, &time_s, flag);
   vpi_release_handle(r);
 
   return 1;
@@ -287,15 +136,18 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
 /*
  * Given a path, look the path name up using the PLI
  * and return its 'value'.
+ *
+ * vpi_handle_by_name() handles all name resolution including array indices
+ * and bit range part-selects. The returned handle's vpiSize reflects
+ * the selected width, so no manual partsel logic is needed.
  */
 static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel) {
   static int s_maxsize = -1;
   int i, size, chunks;
   vpiHandle r;
   s_vpi_value value_s;
-  int is_partsel, hi, lo;
 
-  r = uvm_hdl_handle_by_name_partsel(path, &is_partsel, &hi, &lo);
+  r = vpi_handle_by_name(path, 0);
   if (r == 0) {
     m_uvm_error("UVM/DPI/VLOG_GET",
                 "unable to locate hdl path (%s)\n Either the name is incorrect, or you "
@@ -321,15 +173,9 @@ static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int 
   value_s.format = vpiVectorVal;
   vpi_get_value(r, &value_s);
   // Note upper bits are not cleared, other simulators do likewise
-  if (!is_partsel) {
-    // Keep as separate branch as subroutine can potentially inline and highly optimize
-    for (i = 0; i < chunks; ++i) {
-      value[i].aval = value_s.value.vector[i].aval;
-      value[i].bval = value_s.value.vector[i].bval;
-    }
-  } else {
-    // Verilator supports > 32 bit widths, which is an extension to IEEE DPI
-    svGetPartselLogic(value, value_s.value.vector, lo, hi - lo + 1);
+  for (i = 0; i < chunks; ++i) {
+    value[i].aval = value_s.value.vector[i].aval;
+    value[i].bval = value_s.value.vector[i].bval;
   }
   // vpi_printf((PLI_BYTE8 *)"uvm_hdl_get_vlog(%s,%0x)\n", path, value[0].aval);
   vpi_release_handle(r);
