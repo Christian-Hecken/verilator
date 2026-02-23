@@ -2229,54 +2229,88 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
 static inline bool isSpaceChar(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; }
 
 // Evaluate a constant integer arithmetic expression.
-// Supports: +, -, *, /, unary +/-, parentheses, and decimal integers.
+// Supports: +, -, *, /, unary +/-, parentheses, decimal integers, and identifiers.
+// Identifiers are resolved via vpi_handle_by_name using the provided scope prefix.
 // Uses recursive descent: expr → term (('+' | '-') term)*
 //                         term → factor (('*' | '/') factor)*
 //                         factor → ['+' | '-'] factor | atom
-//                         atom → '(' expr ')' | number
+//                         atom → '(' expr ')' | number | identifier
 
-static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result);
+static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result,
+                          const std::string& scope);
 
 static void vpi_eval_skip_ws(const char* s, size_t len, size_t& pos) {
     while (pos < len && (s[pos] == ' ' || s[pos] == '\t')) ++pos;
 }
 
-static bool vpi_eval_atom(const char* s, size_t len, size_t& pos, long& result) {
+static bool vpi_eval_is_ident_start(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static bool vpi_eval_is_ident_char(char c) {
+    return vpi_eval_is_ident_start(c) || (c >= '0' && c <= '9') || c == '$' || c == '.';
+}
+
+static bool vpi_eval_atom(const char* s, size_t len, size_t& pos, long& result,
+                          const std::string& scope) {
     vpi_eval_skip_ws(s, len, pos);
     if (pos >= len) return false;
     if (s[pos] == '(') {
         ++pos;
-        if (!vpi_eval_expr(s, len, pos, result)) return false;
+        if (!vpi_eval_expr(s, len, pos, result, scope)) return false;
         vpi_eval_skip_ws(s, len, pos);
         if (pos >= len || s[pos] != ')') return false;
         ++pos;
         return true;
     }
-    if (!isdigit(static_cast<unsigned char>(s[pos]))) return false;
-    char* endp;
-    result = std::strtol(s + pos, &endp, 10);
-    pos = static_cast<size_t>(endp - s);
-    return true;
+    if (isdigit(static_cast<unsigned char>(s[pos]))) {
+        char* endp;
+        result = std::strtol(s + pos, &endp, 10);
+        pos = static_cast<size_t>(endp - s);
+        return true;
+    }
+    // Try identifier: resolve via vpi_handle_by_name
+    if (vpi_eval_is_ident_start(s[pos])) {
+        const size_t start = pos;
+        while (pos < len && vpi_eval_is_ident_char(s[pos])) ++pos;
+        // Strip trailing dots (e.g. malformed "foo.")
+        while (pos > start && s[pos - 1] == '.') --pos;
+        if (pos == start) return false;
+        const std::string ident(s + start, pos - start);
+        // Build full hierarchical name: scope + identifier
+        const std::string fullname = scope + ident;
+        vpiHandle vh = vpi_handle_by_name(const_cast<PLI_BYTE8*>(fullname.c_str()), nullptr);
+        if (!vh) return false;
+        s_vpi_value val;
+        val.format = vpiIntVal;
+        vpi_get_value(vh, &val);
+        vpi_release_handle(vh);
+        result = val.value.integer;
+        return true;
+    }
+    return false;
 }
 
-static bool vpi_eval_factor(const char* s, size_t len, size_t& pos, long& result) {
+static bool vpi_eval_factor(const char* s, size_t len, size_t& pos, long& result,
+                            const std::string& scope) {
     vpi_eval_skip_ws(s, len, pos);
     if (pos >= len) return false;
     if (s[pos] == '+') {
         ++pos;
-        return vpi_eval_factor(s, len, pos, result);
+        return vpi_eval_factor(s, len, pos, result, scope);
     }
     if (s[pos] == '-') {
         ++pos;
-        if (!vpi_eval_factor(s, len, pos, result)) return false;
+        if (!vpi_eval_factor(s, len, pos, result, scope)) return false;
         result = -result;
         return true;
     }
-    return vpi_eval_atom(s, len, pos, result);
+    return vpi_eval_atom(s, len, pos, result, scope);
 }
 
-static bool vpi_eval_term(const char* s, size_t len, size_t& pos, long& result) {
-    if (!vpi_eval_factor(s, len, pos, result)) return false;
+static bool vpi_eval_term(const char* s, size_t len, size_t& pos, long& result,
+                          const std::string& scope) {
+    if (!vpi_eval_factor(s, len, pos, result, scope)) return false;
     while (true) {
         vpi_eval_skip_ws(s, len, pos);
         if (pos >= len) break;
@@ -2284,7 +2318,7 @@ static bool vpi_eval_term(const char* s, size_t len, size_t& pos, long& result) 
         if (op != '*' && op != '/') break;
         ++pos;
         long rhs;
-        if (!vpi_eval_factor(s, len, pos, rhs)) return false;
+        if (!vpi_eval_factor(s, len, pos, rhs, scope)) return false;
         if (op == '*')
             result *= rhs;
         else {
@@ -2295,8 +2329,9 @@ static bool vpi_eval_term(const char* s, size_t len, size_t& pos, long& result) 
     return true;
 }
 
-static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result) {
-    if (!vpi_eval_term(s, len, pos, result)) return false;
+static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result,
+                          const std::string& scope) {
+    if (!vpi_eval_term(s, len, pos, result, scope)) return false;
     while (true) {
         vpi_eval_skip_ws(s, len, pos);
         if (pos >= len) break;
@@ -2304,7 +2339,7 @@ static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result) 
         if (op != '+' && op != '-') break;
         ++pos;
         long rhs;
-        if (!vpi_eval_term(s, len, pos, rhs)) return false;
+        if (!vpi_eval_term(s, len, pos, rhs, scope)) return false;
         if (op == '+')
             result += rhs;
         else
@@ -2313,13 +2348,15 @@ static bool vpi_eval_expr(const char* s, size_t len, size_t& pos, long& result) 
     return true;
 }
 
-// Evaluate a constant integer arithmetic expression string.
+// Evaluate an arithmetic expression string, optionally resolving identifiers.
+// The scope prefix is prepended to bare identifiers for vpi_handle_by_name lookup.
 // Returns true if the entire string was consumed and evaluated successfully.
-static bool vpi_eval_const_expr(const std::string& str, long& result) {
+static bool vpi_eval_const_expr(const std::string& str, long& result,
+                                const std::string& scope = "") {
     const char* const s = str.c_str();
     const size_t len = str.length();
     size_t pos = 0;
-    if (!vpi_eval_expr(s, len, pos, result)) return false;
+    if (!vpi_eval_expr(s, len, pos, result, scope)) return false;
     vpi_eval_skip_ws(s, len, pos);
     return pos == len;  // Must have consumed the entire string
 }
@@ -2328,8 +2365,8 @@ static bool vpi_eval_const_expr(const std::string& str, long& result) {
 // The string 'fullname' should have fullname[end-1] == ']'.
 // Returns true and sets index if successful, returns false on error.
 // Updates 'end' to point to the '[' of this bracket pair.
-static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
-                                   PLI_INT32& index_val) {
+static bool vpi_parse_single_index(const std::string& fullname, size_t& end, PLI_INT32& index_val,
+                                   const std::string& scope = "") {
     if (end == 0 || fullname[end - 1] != ']') { return false; }
 
     const size_t close = end - 1;
@@ -2372,9 +2409,9 @@ static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
     // Reject ':' — indicates a bit range or part-select, not a single index
     if (index_str.find(':') != std::string::npos) return false;
 
-    // Evaluate as constant arithmetic expression (supports +, -, *, /, parens)
+    // Evaluate as constant arithmetic expression (supports +, -, *, /, parens, identifiers)
     long val;
-    if (!vpi_eval_const_expr(index_str, val)) return false;
+    if (!vpi_eval_const_expr(index_str, val, scope)) return false;
 
     // Successful parse
     index_val = static_cast<PLI_INT32>(val);
@@ -2393,8 +2430,8 @@ struct VlVpiBitRange {
 // The string 'fullname' should have fullname[end-1] == ']'.
 // Returns true if a bit range was found, false otherwise.
 // Updates 'end' to point to the '[' of this bracket pair.
-static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
-                                VlVpiBitRange& bitRange) {
+static bool vpi_parse_bit_range(const std::string& fullname, size_t& end, VlVpiBitRange& bitRange,
+                                const std::string& scope = "") {
     if (end == 0 || fullname[end - 1] != ']') return false;
 
     const size_t close = end - 1;
@@ -2435,8 +2472,8 @@ static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
     const std::string hi_str = content.substr(0, colon_pos);
     const std::string lo_str = content.substr(colon_pos + 1);
     long hi_val, lo_val;
-    if (!vpi_eval_const_expr(hi_str, hi_val)) return false;
-    if (!vpi_eval_const_expr(lo_str, lo_val)) return false;
+    if (!vpi_eval_const_expr(hi_str, hi_val, scope)) return false;
+    if (!vpi_eval_const_expr(lo_str, lo_val, scope)) return false;
 
     bitRange.hi = static_cast<int32_t>(hi_val);
     bitRange.lo = static_cast<int32_t>(lo_val);
@@ -2449,11 +2486,20 @@ static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
 // e.g., "mem[0][3][2]" -> name becomes "mem", indices = {0, 3, 2}
 // e.g., "mem[0][3][15:8]" -> name becomes "mem", indices = {0, 3}, bitRange = {15, 8}
 // e.g., "signal[31:0]" -> name becomes "signal", indices = {}, bitRange = {31, 0}
+// e.g., "signal[WIDTH-1:0]" -> name becomes "signal", WIDTH resolved via scope
 // Returns true if any brackets were parsed successfully, false otherwise.
 static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices,
                               VlVpiBitRange* bitRange = nullptr) {
     // Check if name has any indices
     if (name.empty()) { return false; }
+
+    // Extract scope prefix for identifier resolution.
+    // e.g., "t.sub.sig[WIDTH-1:0]" -> scope = "t.sub."
+    std::string scope;
+    {
+        const size_t lastDot = name.rfind('.');
+        if (lastDot != std::string::npos) scope = name.substr(0, lastDot + 1);
+    }
 
     // Find the position of the last ']' (skipping trailing whitespace)
     size_t last_bracket = name.length();
@@ -2479,7 +2525,7 @@ static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices
             first = false;
             size_t try_end = end;
             VlVpiBitRange try_range;
-            if (vpi_parse_bit_range(name, try_end, try_range)) {
+            if (vpi_parse_bit_range(name, try_end, try_range, scope)) {
                 // Successfully parsed as bit range
                 *bitRange = try_range;
                 end = try_end;
@@ -2491,7 +2537,7 @@ static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices
         first = false;
 
         PLI_INT32 index_val = 0;
-        if (!vpi_parse_single_index(name, end, index_val)) {
+        if (!vpi_parse_single_index(name, end, index_val, scope)) {
             // Parse failed - return no indices
             indices.clear();
             if (bitRange) bitRange->valid = false;

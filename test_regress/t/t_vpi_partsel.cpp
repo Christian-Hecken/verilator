@@ -554,6 +554,128 @@ static int test_arithmetic_exprs() {
 }
 
 //======================================================================
+// Test 9: Identifiers in index expressions
+// Uses parameters WIDTH=32, BYTE=8, MEM_DEPTH=4, HI_BYTE=31, LO_BYTE=24
+// sig_desc = 32'hDEAD_BEEF
+static int test_identifier_exprs() {
+    printf("== test_identifier_exprs ==\n");
+
+    // --- Identifier in bit-range bounds ---
+
+    // sig_desc[HI_BYTE:LO_BYTE] should be equivalent to [31:24] -> 0xDE
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[HI_BYTE:LO_BYTE]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[HI_BYTE:LO_BYTE]\") returned "
+                   "NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xDE) {
+            printf("%%Error: value = 0x%02x, expected 0xDE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[HI_BYTE:LO_BYTE] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // sig_desc[BYTE-1:0] should be equivalent to [7:0] -> 0xEF
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[BYTE-1:0]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[BYTE-1:0]\") returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xEF) {
+            printf("%%Error: value = 0x%02x, expected 0xEF\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[BYTE-1:0] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // sig_desc[WIDTH-1:WIDTH-BYTE] should be equivalent to [31:24] -> 0xDE
+    {
+        TestVpiHandle vh
+            = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[WIDTH-1:WIDTH-BYTE]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[WIDTH-1:WIDTH-BYTE]\") returned "
+                   "NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0xDE) {
+            printf("%%Error: value = 0x%02x, expected 0xDE\n", val);
+            return __LINE__;
+        }
+        printf("  sig_desc[WIDTH-1:WIDTH-BYTE] value=0x%02x OK\n", val);
+    }
+
+    // --- Identifier in array index ---
+
+    // mem[MEM_DEPTH-1] should be same as mem[3] = 0xDDDD3333
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.mem[MEM_DEPTH-1]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[MEM_DEPTH-1]\") returned NULL\n");
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != (int)0xDDDD3333) {
+            printf("%%Error: value = 0x%08x, expected 0xDDDD3333\n", val);
+            return __LINE__;
+        }
+        printf("  mem[MEM_DEPTH-1] value=0x%08x OK\n", val);
+    }
+
+    // --- Combined: identifier with arithmetic in both index and bit-range ---
+
+    // mem[MEM_DEPTH-2][BYTE*2-1:BYTE] should be mem[2][15:8] = 0x22
+    {
+        TestVpiHandle vh
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem[MEM_DEPTH-2][BYTE*2-1:BYTE]", nullptr);
+        if (!vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.mem[MEM_DEPTH-2][BYTE*2-1:BYTE]\") "
+                   "returned NULL\n");
+            return __LINE__;
+        }
+        int size = vpi_get(vpiSize, vh);
+        if (size != 8) {
+            printf("%%Error: vpiSize = %d, expected 8\n", size);
+            return __LINE__;
+        }
+        int val = vpi_get_int(vh);
+        if (val != 0x22) {
+            printf("%%Error: value = 0x%02x, expected 0x22\n", val);
+            return __LINE__;
+        }
+        printf("  mem[MEM_DEPTH-2][BYTE*2-1:BYTE] size=%d value=0x%02x OK\n", size, val);
+    }
+
+    // --- Unknown identifier should fail gracefully ---
+    {
+        TestVpiHandle vh = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[NONEXISTENT-1:0]", nullptr);
+        if (vh) {
+            printf("%%Error: vpi_handle_by_name(\"t.sig_desc[NONEXISTENT-1:0]\") returned "
+                   "!NULL\n");
+            return __LINE__;
+        }
+        printf("  sig_desc[NONEXISTENT-1:0] = NULL (unknown ident rejected) OK\n");
+    }
+
+    return 0;
+}
+
+//======================================================================
 // Test 7: Part-select on unpacked dimension should fail
 // (bit-range on unpacked dim makes no sense)
 static int test_partsel_on_unpacked() {
@@ -580,6 +702,7 @@ extern "C" int mon_check() {
     if (int status = test_partsel_with_array()) return status;
     if (int status = test_partsel_out_of_range()) return status;
     if (int status = test_arithmetic_exprs()) return status;
+    if (int status = test_identifier_exprs()) return status;
     if (int status = test_partsel_write()) return status;
     if (int status = test_partsel_array_write()) return status;
     if (int status = test_partsel_on_unpacked()) return status;

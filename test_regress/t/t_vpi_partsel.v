@@ -33,6 +33,13 @@ extern "C" int mon_check();
 `verilog
 `endif
 
+   // Parameters for identifier-in-expression tests
+   parameter WIDTH `PUBLIC_FLAT_RD = 32;
+   parameter BYTE `PUBLIC_FLAT_RD = 8;
+   parameter MEM_DEPTH `PUBLIC_FLAT_RD = 4;
+   localparam HI_BYTE `PUBLIC_FLAT_RD = 31;
+   localparam LO_BYTE `PUBLIC_FLAT_RD = 24;
+
    // Descending packed range [31:0]
    logic [31:0] sig_desc `PUBLIC_FLAT_RW;
 
