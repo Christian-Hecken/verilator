@@ -47,7 +47,6 @@ extern "C" int mon_check();
    reg [7:0]       mem_2d[3:0][7:0]  /*verilator public_flat_rw */;  // Descending indices
    reg [31:0]      mem_1d[0:15]      /*verilator public_flat_rw */;
    reg [15:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
-   reg [3:0]       simple_packed       /*verilator public_flat_rw */;
 
    // Signal with multiple packed dimensions and unpacked dimensions
    // reg [3:0][7:0] multi_packed[2:0] means:
@@ -132,8 +131,6 @@ extern "C" int mon_check();
             multi_packed[i][j] = 8'((i * 4) + j);
          end
       end
-
-      simple_packed = 4'h5;
 
 `ifdef VERILATOR
       status = $c32("mon_check()");
