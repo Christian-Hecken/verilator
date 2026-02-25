@@ -2222,138 +2222,12 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
     VL_VPI_UNIMP_();
 }
 
-// Helper function to parse array indices from a name string
-// e.g., "mem[0][3][2]" -> returns "mem" and populates indices with {0, 3, 2}
-// Returns true if indices were found, false otherwise
-// Helper: skip whitespace in string
-static inline bool isSpaceChar(char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; }
-
-// Parse a single trailing index in brackets with optional whitespace: [ num ].
-// The string 'fullname' should have fullname[end-1] == ']'.
-// Returns true and sets index if successful, returns false on error.
-// Updates 'end' to point to the '[' of this bracket pair.
-static bool vpi_parse_single_index(const std::string& fullname, size_t& end,
-                                   PLI_INT32& index_val) {
-    if (end == 0 || fullname[end - 1] != ']') { return false; }
-
-    const size_t close = end - 1;
-    // Find matching opening bracket by searching backwards
-    size_t bracket_depth = 1;
-    size_t open = close;
-    while (open > 0 && bracket_depth > 0) {
-        --open;
-        if (fullname[open] == ']') {
-            ++bracket_depth;
-        } else if (fullname[open] == '[') {
-            --bracket_depth;
-        }
-    }
-    if (bracket_depth != 0) {
-        // Unmatched brackets
-        return false;
-    }
-    // Now open points at '['
-
-    // Extract the content between '[' and ']'
-    size_t indexStart = open + 1;
-    size_t indexEnd = close;
-
-    // Skip leading whitespace
-    while (indexStart < indexEnd && isSpaceChar(fullname[indexStart])) { ++indexStart; }
-
-    // Skip trailing whitespace
-    while (indexEnd > indexStart && isSpaceChar(fullname[indexEnd - 1])) { --indexEnd; }
-
-    // Check if empty
-    if (indexStart == indexEnd) {
-        // Empty brackets []
-        return false;
-    }
-
-    // Check for ':' or '+' (range or other special notation)
-    std::string index_str = fullname.substr(indexStart, indexEnd - indexStart);
-    for (char c : index_str) {
-        if (c == ':' || c == '+') {
-            // Range notation [high:low] or increment [base+:width] - not supported
-            return false;
-        }
-    }
-
-    // Try to parse as decimal integer
-    char* endp = nullptr;
-    long val = std::strtol(index_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') {
-        // Not a valid integer
-        return false;
-    }
-
-    // Successful parse
-    index_val = static_cast<PLI_INT32>(val);
-    end = open;
-    return true;
-}
-
 // Bit range information extracted from a name string by vpi_parse_indices.
 struct VlVpiBitRange {
     int32_t hi = 0;
     int32_t lo = 0;
     bool valid = false;
 };
-
-// Parse a single bracket as a bit range [hi:lo] or [idx].
-// The string 'fullname' should have fullname[end-1] == ']'.
-// Returns true if a bit range was found, false otherwise.
-// Updates 'end' to point to the '[' of this bracket pair.
-static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
-                                VlVpiBitRange& bitRange) {
-    if (end == 0 || fullname[end - 1] != ']') return false;
-
-    const size_t close = end - 1;
-    // Find matching opening bracket
-    size_t bracket_depth = 1;
-    size_t open = close;
-    while (open > 0 && bracket_depth > 0) {
-        --open;
-        if (fullname[open] == ']')
-            ++bracket_depth;
-        else if (fullname[open] == '[')
-            --bracket_depth;
-    }
-    if (bracket_depth != 0) return false;
-
-    // Extract content between '[' and ']'
-    size_t indexStart = open + 1;
-    size_t indexEnd = close;
-    while (indexStart < indexEnd && isSpaceChar(fullname[indexStart])) ++indexStart;
-    while (indexEnd > indexStart && isSpaceChar(fullname[indexEnd - 1])) --indexEnd;
-    if (indexStart == indexEnd) return false;
-
-    const std::string content = fullname.substr(indexStart, indexEnd - indexStart);
-
-    // Must contain ':' to be a bit range
-    const size_t colon_pos = content.find(':');
-    if (colon_pos == std::string::npos) return false;
-
-    // Reject '+:' or '-:' (indexed part-select)
-    if (content.find('+') != std::string::npos || content.find('-') != std::string::npos)
-        return false;
-
-    // Parse hi and lo
-    const std::string hi_str = content.substr(0, colon_pos);
-    const std::string lo_str = content.substr(colon_pos + 1);
-    char* endp = nullptr;
-    const long hi_val = std::strtol(hi_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') return false;
-    endp = nullptr;
-    const long lo_val = std::strtol(lo_str.c_str(), &endp, 10);
-    if (!endp || *endp != '\0') return false;
-
-    bitRange.hi = static_cast<int32_t>(hi_val);
-    bitRange.lo = static_cast<int32_t>(lo_val);
-    bitRange.valid = true;
-    end = open;
-    return true;
-}
 
 // Parse multi-dimensional array indices and an optional trailing bit range from a name string.
 // e.g., "mem[0][3][2]" -> name becomes "mem", indices = {0, 3, 2}
@@ -2362,63 +2236,60 @@ static bool vpi_parse_bit_range(const std::string& fullname, size_t& end,
 // Returns true if any brackets were parsed successfully, false otherwise.
 static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices,
                               VlVpiBitRange* bitRange = nullptr) {
-    // Check if name has any indices
-    if (name.empty()) { return false; }
-
-    // Find the position of the last ']' (skipping trailing whitespace)
-    size_t last_bracket = name.length();
-    while (last_bracket > 0 && isSpaceChar(name[last_bracket - 1])) { --last_bracket; }
-
-    if (last_bracket == 0 || name[last_bracket - 1] != ']') {
-        // No trailing ']' found
-        return false;
-    }
+    if (name.empty() || name.back() != ']') return false;
 
     indices.clear();
-    size_t end = last_bracket;  // Start at the ']' position
-
-    // Skip any trailing whitespace before the first ']'
-    while (end > 0 && isSpaceChar(name[end - 1])) { --end; }
-
-    // Parse indices from right to left.
-    // The rightmost bracket may be a bit range [hi:lo]; if so, extract it first.
+    size_t end = name.length();
     bool first = true;
+
     while (end > 0 && name[end - 1] == ']') {
-        // On the first (rightmost) bracket, try parsing as a bit range
+        const size_t close = end - 1;
+        // Search backward for matching '['
+        size_t open = close;
+        while (open > 0 && name[open - 1] != '[') --open;
+        if (open == 0) return false;  // No matching '['
+        --open;  // Points to '['
+
+        const std::string content = name.substr(open + 1, close - open - 1);
+        if (content.empty()) return false;  // Empty brackets []
+
+        // On the first (rightmost) bracket, check for bit range [hi:lo]
         if (first && bitRange) {
-            first = false;
-            size_t try_end = end;
-            VlVpiBitRange try_range;
-            if (vpi_parse_bit_range(name, try_end, try_range)) {
-                // Successfully parsed as bit range
-                *bitRange = try_range;
-                end = try_end;
-                // Skip whitespace between bracket groups
-                while (end > 0 && isSpaceChar(name[end - 1])) --end;
+            const size_t colon = content.find(':');
+            if (colon != std::string::npos) {
+                // Reject indexed part-select (+: or -:)
+                if (content.find('+') != std::string::npos
+                    || content.find('-') != std::string::npos)
+                    return false;
+                char* endp = nullptr;
+                const long hi_val = std::strtol(content.c_str(), &endp, 10);
+                if (!endp || *endp != ':') return false;
+                const long lo_val = std::strtol(endp + 1, &endp, 10);
+                if (!endp || *endp != '\0') return false;
+                bitRange->hi = static_cast<int32_t>(hi_val);
+                bitRange->lo = static_cast<int32_t>(lo_val);
+                bitRange->valid = true;
+                end = open;
+                first = false;
                 continue;
             }
         }
         first = false;
 
-        PLI_INT32 index_val = 0;
-        if (!vpi_parse_single_index(name, end, index_val)) {
-            // Parse failed - return no indices
-            indices.clear();
-            if (bitRange) bitRange->valid = false;
-            return false;
-        }
-        indices.push_back(index_val);
-
-        // Skip whitespace between bracket groups
-        while (end > 0 && isSpaceChar(name[end - 1])) { --end; }
+        // Parse as integer index
+        char* endp = nullptr;
+        const long val = std::strtol(content.c_str(), &endp, 10);
+        if (!endp || *endp != '\0') return false;
+        indices.push_back(static_cast<PLI_INT32>(val));
+        end = open;
     }
 
-    if (indices.empty() && !(bitRange && bitRange->valid)) { return false; }
+    if (indices.empty() && !(bitRange && bitRange->valid)) return false;
 
     // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
     std::reverse(indices.begin(), indices.end());
 
-    // Truncate name to remove the indices (everything before the first '[')
+    // Truncate name to remove the indices
     name.erase(end);
 
     return true;
