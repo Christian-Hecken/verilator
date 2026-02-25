@@ -38,7 +38,11 @@ extern "C" int mon_check();
    // verilator lint_off ASCRANGE
    reg [0:61]   quads[2:3];
    reg [8:19]   rev   /*verilator public_flat_rw @(posedge clk) */;
+   reg [0:31]   sig_asc;
    // verilator lint_on ASCRANGE
+
+   // Signals for part-select testing
+   reg [31:0]      sig_desc;
 
    reg [31:0]      count;
    reg [31:0]      half_count;
@@ -95,6 +99,9 @@ extern "C" int mon_check();
       str1 = "hello";
 
       rev = 12'habc;
+
+      sig_desc = 32'hDEAD_BEEF;
+      sig_asc  = 32'h1234_5678;
 
       // Initialize mem_2d: mem_2d[i][j] = i*8 + j
       for (int i = 0; i < 4; i++) begin

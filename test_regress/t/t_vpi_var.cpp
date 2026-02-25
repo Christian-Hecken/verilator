@@ -1644,6 +1644,234 @@ int _mon_check_multi_index() {
         CHECK_RESULT_Z(vh1);
     }
 
+    // ========== BIT-RANGE PART-SELECT TESTS (from t_vpi_partsel) ==========
+
+    // Part-select on descending-range signal [31:0]
+    // sig_desc = 32'hDEAD_BEEF
+    {
+        // [15:8] should give 0xBE (bits 15 down to 8)
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0xBE);
+    }
+    {
+        // [31:24] should give 0xDE
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31:24]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0xDE);
+    }
+    {
+        // [7:0] should give 0xEF
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[7:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0xEF);
+    }
+    {
+        // Single-bit range [5:5] should give size 1
+        // Bit 5 of 0xDEAD_BEEF: 0xEF = 1110_1111, bit 5 = 1
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[5:5]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 1);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 1);
+    }
+    {
+        // Full range [31:0] should give full value
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 32);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, (int)0xDEADBEEF);
+    }
+
+    // Part-select on ascending-range signal [0:31]
+    // sig_asc = 32'h1234_5678
+    // For [0:31], bit 0 is MSB in storage. [0:7] selects top byte: 0x12.
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_asc[0:7]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x12);
+    }
+    {
+        // [24:31] selects LSB byte: 0x78
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_asc[24:31]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x78);
+    }
+
+    // Part-select combined with array index
+    // mem_1d[1] = 1*256 = 0x100
+    {
+        // mem_1d[1][7:0] should give 0x00 (low byte of 0x100)
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[1][7:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x00);
+    }
+    {
+        // mem_1d[1][15:8] should give 0x01 (bits 15:8 of 0x100)
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[1][15:8]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x01);
+    }
+
+    // Part-select with multi-dimensional array
+    // mem_2d[2][3] = 2*8 + 3 = 19 = 0x13
+    {
+        // mem_2d[2][3][3:0] should give low nibble = 0x3
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][3][3:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 4);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x3);
+    }
+    {
+        // mem_2d[2][3][7:4] should give high nibble = 0x1
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][3][7:4]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 4);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0x1);
+    }
+
+    // Part-select out of range should fail
+    {
+        // sig_desc is [31:0], [99:90] is out of range
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[99:90]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+    {
+        // sig_desc [32:24] - bit 32 out of range for [31:0]
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[32:24]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // Part-select write: write 0x42 to sig_desc[15:8], verify only those bits change
+    {
+        // sig_desc starts as 0xDEAD_BEEF, after write to [15:8] should be 0xDEAD_42EF
+        TestVpiHandle vh_ps = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
+        CHECK_RESULT_NZ(vh_ps);
+
+        s_vpi_value put_val;
+        put_val.format = vpiIntVal;
+        put_val.value.integer = 0x42;
+        s_vpi_time time_s = {vpiSimTime, 0, 0, 0.0};
+        vpi_put_value(vh_ps, &put_val, &time_s, vpiNoDelay);
+
+        // Read back full signal
+        TestVpiHandle vh_full = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc", nullptr);
+        CHECK_RESULT_NZ(vh_full);
+        vpi_get_value(vh_full, &v);
+        CHECK_RESULT(v.value.integer, (int)0xDEAD42EF);
+
+        // Restore original value
+        put_val.value.integer = (int)0xDEADBEEF;
+        vpi_put_value(vh_full, &put_val, &time_s, vpiNoDelay);
+    }
+
+    // Part-select on unpacked dimension should fail (slice, not bit-range)
+    // mem_1d is [0:15], so mem_1d[1:2] looks like an unpacked slice
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_1d[1:2]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // ========== UNPACKED ARRAY SLICE TESTS (from t_vpi_multi_index) ==========
+    // Unpacked array slice syntax is not supported in vpi_handle_by_name.
+    // These document that it fails cleanly.
+
+    // mem_2d[0:2][3] - slice on first unpacked dimension
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][3]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // mem_2d[0:2] - slice on only dimension specified
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // ========== BIT-RANGE POSITION TESTS ==========
+    // Bit-range is only supported as the LAST bracket group.
+    // If a range appears in a non-final position, the parse should fail.
+
+    // Range in non-last position: mem_2d[2:0][4] should fail
+    // (looks like range on first dim followed by index on second)
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2:0][4]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // Range in first of three positions: mem_3d[0:1][0][0] should fail
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0:1][0][0]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // Range in middle position: mem_3d[0][0:1][0] should fail
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0:1][0]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // Bit-range on partially-indexed multi-dim signal:
+    // mem_3d is [0:1][1:0][0:1] (3 unpacked dims), element is [15:0] packed.
+    // mem_3d[0][7:0] — only 1 of 3 unpacked dims indexed, then bit-range.
+    // This should fail because there are still unpacked dimensions left to index.
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][7:0]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // mem_3d[0][0][7:0] — 2 of 3 unpacked dims indexed, then bit-range.
+    // Still one unpacked dim remaining, should fail.
+    {
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][7:0]", nullptr);
+        CHECK_RESULT_Z(vh1);
+    }
+
+    // mem_3d[0][0][0][7:0] — all 3 unpacked dims indexed, then bit-range.
+    // This should succeed — element is [15:0], selecting [7:0].
+    {
+        // mem_3d[0][0][0] = (0*4)+(0*2)+0 = 0
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][0][7:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 8);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 0);  // low byte of 0
+    }
+    {
+        // mem_3d[1][1][1] = (1*4)+(1*2)+1 = 7
+        TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][3:0]", nullptr);
+        CHECK_RESULT_NZ(vh1);
+        int size = vpi_get(vpiSize, vh1);
+        CHECK_RESULT(size, 4);
+        vpi_get_value(vh1, &v);
+        CHECK_RESULT(v.value.integer, 7);  // low nibble of 7
+    }
+
     return 0;
 }
 
