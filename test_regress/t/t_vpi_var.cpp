@@ -1010,9 +1010,10 @@ int _mon_check_vlog_info() {
 }
 
 int _mon_check_multi_index() {
-    // vpi_handle_by_multi_index and vpi_handle_by_name with array indexing
     s_vpi_value v;
     v.format = vpiIntVal;
+
+    // vpi_handle_by_multi_index tests
 
     // Basic tests for vpi_handle_by_multi_index
     {
@@ -1056,26 +1057,6 @@ int _mon_check_multi_index() {
         CHECK_RESULT_NZ(vh_seq_2);
         vpi_get_value(vh_seq_2, &v);
         CHECK_RESULT(v.value.integer, 11);
-    }
-
-    // vpi_handle_by_name with array indexing
-    {
-        TestVpiHandle vh_1d = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
-        CHECK_RESULT_NZ(vh_1d);
-        CHECK_RESULT(vpi_get(vpiType, vh_1d), vpiReg);
-        CHECK_RESULT(vpi_get(vpiSize, vh_1d), 62);
-
-        TestVpiHandle vh_2d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1][3]", nullptr);
-        CHECK_RESULT_NZ(vh_2d);
-        CHECK_RESULT(vpi_get(vpiSize, vh_2d), 8);
-        vpi_get_value(vh_2d, &v);
-        CHECK_RESULT(v.value.integer, 11);
-
-        TestVpiHandle vh_3d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1]", nullptr);
-        CHECK_RESULT_NZ(vh_3d);
-        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 16);
-        vpi_get_value(vh_3d, &v);
-        CHECK_RESULT(v.value.integer, 7);
     }
 
     // Error handling for vpi_handle_by_multi_index
@@ -1135,23 +1116,8 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 31);  // 3*8 + 7
     }
 
-    // Packed dimension indexing (bit selection) with type/size verification
+    // Packed dimension indexing: mem_3d fully indexed gives 16-bit element
     {
-        // quads[2] is 62-bit — select individual bits, verify type and size
-        TestVpiHandle vh_arr = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
-        CHECK_RESULT_NZ(vh_arr);
-        TestVpiHandle vh_bit0 = vpi_handle_by_index(vh_arr, 0);
-        CHECK_RESULT_NZ(vh_bit0);
-        CHECK_RESULT(vpi_get(vpiType, vh_bit0), vpiReg);
-        CHECK_RESULT(vpi_get(vpiSize, vh_bit0), 1);
-        TestVpiHandle vh_bit32 = vpi_handle_by_index(vh_arr, 32);
-        CHECK_RESULT_NZ(vh_bit32);
-        CHECK_RESULT(vpi_get(vpiSize, vh_bit32), 1);
-        // Out of range bit should fail
-        TestVpiHandle vh_oob = vpi_handle_by_index(vh_arr, 100);
-        CHECK_RESULT_Z(vh_oob);
-
-        // mem_3d fully indexed gives 16-bit element
         PLI_INT32 indices[3] = {0, 0, 0};
         TestVpiHandle vh_elem = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d", nullptr);
         CHECK_RESULT_NZ(vh_elem);
@@ -1164,6 +1130,44 @@ int _mon_check_multi_index() {
         // Out of range bit
         TestVpiHandle vh_3d_oob = vpi_handle_by_index(vh_3d, 16);
         CHECK_RESULT_Z(vh_3d_oob);
+    }
+
+    // vpi_handle_by_name indexing tests
+
+    // vpi_handle_by_name with array indexing
+    {
+        TestVpiHandle vh_1d = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
+        CHECK_RESULT_NZ(vh_1d);
+        CHECK_RESULT(vpi_get(vpiType, vh_1d), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_1d), 62);
+
+        TestVpiHandle vh_2d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[1][3]", nullptr);
+        CHECK_RESULT_NZ(vh_2d);
+        CHECK_RESULT(vpi_get(vpiSize, vh_2d), 8);
+        vpi_get_value(vh_2d, &v);
+        CHECK_RESULT(v.value.integer, 11);
+
+        TestVpiHandle vh_3d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1]", nullptr);
+        CHECK_RESULT_NZ(vh_3d);
+        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 16);
+        vpi_get_value(vh_3d, &v);
+        CHECK_RESULT(v.value.integer, 7);
+    }
+
+    // Packed dimension indexing: quads[2] bit selection
+    {
+        TestVpiHandle vh_arr = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
+        CHECK_RESULT_NZ(vh_arr);
+        TestVpiHandle vh_bit0 = vpi_handle_by_index(vh_arr, 0);
+        CHECK_RESULT_NZ(vh_bit0);
+        CHECK_RESULT(vpi_get(vpiType, vh_bit0), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_bit0), 1);
+        TestVpiHandle vh_bit32 = vpi_handle_by_index(vh_arr, 32);
+        CHECK_RESULT_NZ(vh_bit32);
+        CHECK_RESULT(vpi_get(vpiSize, vh_bit32), 1);
+        // Out of range bit should fail
+        TestVpiHandle vh_oob = vpi_handle_by_index(vh_arr, 100);
+        CHECK_RESULT_Z(vh_oob);
     }
 
     // Multiple packed dimensions: multi_packed is [3:0][7:0] multi_packed[2:0]
