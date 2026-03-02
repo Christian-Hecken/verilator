@@ -49,7 +49,6 @@ extern "C" int mon_check();
    reg [31:0]      delayed      /*verilator public_flat_rw */;
    reg [31:0]      delayed_mem [16] /*verilator public_flat_rw */;
    reg [7:0]       mem_2d[3:0][7:0]  /*verilator public_flat_rw */;  // Descending indices
-   reg [31:0]      mem_1d[0:15]      /*verilator public_flat_rw */;
    reg [15:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
 
    reg [3:0] [7:0] multi_packed[2:0]  /*verilator public_flat_rw */;
@@ -108,10 +107,6 @@ extern "C" int mon_check();
          for (int j = 0; j < 8; j++) begin
             mem_2d[i][j] = 8'(((i * 8) + j));
          end
-      end
-
-      for (int i = 0; i < 16; i++) begin
-         mem_1d[i] = i * 256;
       end
 
       for (int i = 0; i < 2; i++) begin

@@ -49,7 +49,6 @@ extern "C" int mon_check();
    reg [31:0]      delayed;
    reg [31:0]      delayed_mem [16];
    reg [7:0]       mem_2d[3:0][7:0];  // Descending indices
-   reg [31:0]      mem_1d[0:15];
    reg [15:0]      mem_3d[0:1][1:0][0:1];  // Mixed: asc, desc, asc
 
    // Signal with multiple packed dimensions
@@ -106,10 +105,6 @@ extern "C" int mon_check();
          for (int j = 0; j < 8; j++) begin
             mem_2d[i][j] = 8'(((i * 8) + j));
          end
-      end
-
-      for (int i = 0; i < 16; i++) begin
-         mem_1d[i] = i * 256;
       end
 
       for (int i = 0; i < 2; i++) begin
