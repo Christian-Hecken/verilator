@@ -1773,22 +1773,22 @@ int _mon_check_multi_index() {
 
     // Bit-range on partially-indexed multi-dim signal:
     // mem_3d is [0:1][1:0][0:1] (3 unpacked dims), element is [15:0] packed.
-    // mem_3d[0][7:0] — only 1 of 3 unpacked dims indexed, then bit-range.
+    // mem_3d[0][7:0] - only 1 of 3 unpacked dims indexed, then bit-range.
     // This should fail because there are still unpacked dimensions left to index.
     {
         TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][7:0]", nullptr);
         CHECK_RESULT_Z(vh1);
     }
 
-    // mem_3d[0][0][7:0] — 2 of 3 unpacked dims indexed, then bit-range.
+    // mem_3d[0][0][7:0] - 2 of 3 unpacked dims indexed, then bit-range.
     // Still one unpacked dim remaining, should fail.
     {
         TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][7:0]", nullptr);
         CHECK_RESULT_Z(vh1);
     }
 
-    // mem_3d[0][0][0][7:0] — all 3 unpacked dims indexed, then bit-range.
-    // This should succeed — element is [15:0], selecting [7:0].
+    // mem_3d[0][0][0][7:0] - all 3 unpacked dims indexed, then bit-range.
+    // This should succeed - element is [15:0], selecting [7:0].
     {
         // mem_3d[0][0][0] = (0*4)+(0*2)+0 = 0
         TestVpiHandle vh1 = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][0][7:0]", nullptr);
