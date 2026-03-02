@@ -89,13 +89,6 @@ static int uvm_hdl_max_width() {
 /*
  * Given a path, look the path name up using the PLI,
  * and set it to 'value'.
- *
- * vpi_handle_by_name() now handles all name resolution including:
- * - Hierarchical paths: "top.module.signal"
- * - Array indices: "mem[0][3]" (via vpi_parse_indices)
- * - Bit range part-selects: "signal[15:8]" (via withPartSelect)
- * - Combined: "mem[0][3][15:8]"
- * The returned handle's vpiSize reflects the selected width.
  */
 static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
   vpiHandle r;
@@ -136,10 +129,6 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
 /*
  * Given a path, look the path name up using the PLI
  * and return its 'value'.
- *
- * vpi_handle_by_name() handles all name resolution including array indices
- * and bit range part-selects. The returned handle's vpiSize reflects
- * the selected width, so no manual partsel logic is needed.
  */
 static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel) {
   static int s_maxsize = -1;
