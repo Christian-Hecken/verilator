@@ -49,7 +49,7 @@ extern "C" int mon_check();
    reg [31:0]      delayed      /*verilator public_flat_rw */;
    reg [31:0]      delayed_mem [16] /*verilator public_flat_rw */;
    reg [7:0]       mem_2d[3:0][7:0]  /*verilator public_flat_rw */;  // Descending indices
-   reg [15:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
+   reg [95:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
 
    reg [3:0] [7:0] multi_packed[2:0]  /*verilator public_flat_rw */;
    reg             unpacked_only[7:0];
@@ -113,7 +113,7 @@ extern "C" int mon_check();
       for (int i = 0; i < 2; i++) begin
          for (int j = 0; j < 2; j++) begin
             for (int k = 0; k < 2; k++) begin
-               mem_3d[i][j][k] = 16'(((i * 4) + (j * 2) + k));
+               mem_3d[i][j][k] = 96'(((i * 4) + (j * 2) + k));
             end
          end
       end

@@ -1037,14 +1037,14 @@ int _mon_check_multi_index() {
         vpi_get_value(vh_2d, &v);
         CHECK_RESULT(v.value.integer, 11);  // 1*8 + 3
 
-        // 3D unpacked array: mem_3d[0:1][1:0][0:1] with 16-bit elements
+        // 3D unpacked array: mem_3d[0:1][1:0][0:1] with 96-bit elements
         TestVpiHandle vh_3d_base = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d", nullptr);
         CHECK_RESULT_NZ(vh_3d_base);
         PLI_INT32 idx_3d[3] = {1, 1, 1};
         TestVpiHandle vh_3d = vpi_handle_by_multi_index(vh_3d_base, 3, idx_3d);
         CHECK_RESULT_NZ(vh_3d);
         CHECK_RESULT(vpi_get(vpiType, vh_3d), vpiReg);
-        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 16);
+        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 96);
         vpi_get_value(vh_3d, &v);
         CHECK_RESULT(v.value.integer, 7);  // (1*4) + (1*2) + 1
 
@@ -1116,7 +1116,7 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 31);  // 3*8 + 7
     }
 
-    // Packed dimension indexing: mem_3d fully indexed gives 16-bit element
+    // Packed dimension indexing: mem_3d fully indexed gives 96-bit element (VLWide)
     {
         PLI_INT32 indices[3] = {0, 0, 0};
         TestVpiHandle vh_elem = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d", nullptr);
@@ -1128,7 +1128,7 @@ int _mon_check_multi_index() {
         CHECK_RESULT_NZ(vh_3d_bit0);
         CHECK_RESULT(vpi_get(vpiSize, vh_3d_bit0), 1);
         // Out of range bit
-        TestVpiHandle vh_3d_oob = vpi_handle_by_index(vh_3d, 16);
+        TestVpiHandle vh_3d_oob = vpi_handle_by_index(vh_3d, 96);
         CHECK_RESULT_Z(vh_3d_oob);
     }
 
@@ -1149,7 +1149,7 @@ int _mon_check_multi_index() {
 
         TestVpiHandle vh_3d = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1]", nullptr);
         CHECK_RESULT_NZ(vh_3d);
-        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 16);
+        CHECK_RESULT(vpi_get(vpiSize, vh_3d), 96);
         vpi_get_value(vh_3d, &v);
         CHECK_RESULT(v.value.integer, 7);
     }
