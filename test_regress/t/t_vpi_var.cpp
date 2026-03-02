@@ -1225,6 +1225,8 @@ int _mon_check_multi_index() {
         // Indexing non-array signals
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.onebit[0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.twoone[0]", nullptr));
+        // Part-select on unpacked-only array
+        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.unpacked_only[3:0]", nullptr));
         // Range/slice syntax in non-last position or on unpacked dimensions
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1:3]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][0]", nullptr));

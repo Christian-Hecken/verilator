@@ -52,6 +52,7 @@ extern "C" int mon_check();
    reg [15:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
 
    reg [3:0] [7:0] multi_packed[2:0]  /*verilator public_flat_rw */;
+   reg             unpacked_only[7:0];
 
    reg [7:0]       text_byte    /*verilator public_flat_rw @(posedge clk) */;
    reg [15:0]      text_half    /*verilator public_flat_rw @(posedge clk) */;

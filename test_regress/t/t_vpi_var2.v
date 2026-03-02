@@ -67,6 +67,7 @@ extern "C" int mon_check();
 
    // Signal with multiple packed dimensions
    reg [3:0] [7:0] multi_packed[2:0];
+   reg             unpacked_only[7:0];
 /*verilator public_off*/
    reg             invisible2;
 
