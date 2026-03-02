@@ -1162,6 +1162,10 @@ int _mon_check_multi_index() {
         CHECK_RESULT_NZ(vh_bit0);
         CHECK_RESULT(vpi_get(vpiType, vh_bit0), vpiReg);
         CHECK_RESULT(vpi_get(vpiSize, vh_bit0), 1);
+        // Try to index into a single bit
+        TestVpiHandle vh_invalid = vpi_handle_by_index(vh_bit0, 0);
+        CHECK_RESULT_Z(vh_invalid);
+
         TestVpiHandle vh_bit32 = vpi_handle_by_index(vh_arr, 32);
         CHECK_RESULT_NZ(vh_bit32);
         CHECK_RESULT(vpi_get(vpiSize, vh_bit32), 1);
