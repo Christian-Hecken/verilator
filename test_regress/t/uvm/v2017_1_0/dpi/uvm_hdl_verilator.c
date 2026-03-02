@@ -38,7 +38,7 @@
 
 static void m_uvm_error(const char *ID, const char *msg, ...);
 static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag);
-static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel);
+static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag);
 static int uvm_hdl_max_width();
 
 // static print buffer
@@ -130,7 +130,7 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
  * Given a path, look the path name up using the PLI
  * and return its 'value'.
  */
-static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel) {
+static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
   static int s_maxsize = -1;
   int i, size, chunks;
   vpiHandle r;
@@ -191,7 +191,7 @@ int uvm_hdl_check_path(char *path) {
  * or the FLI, and return its 'value'.
  */
 int uvm_hdl_read(char *path, p_vpi_vecval value) {
-  return uvm_hdl_get_vlog(path, value, vpiNoDelay, 0);
+  return uvm_hdl_get_vlog(path, value, vpiNoDelay);
 }
 
 /*
