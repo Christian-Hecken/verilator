@@ -52,11 +52,6 @@ extern "C" int mon_check();
    reg [31:0]      mem_1d[0:15]      /*verilator public_flat_rw */;
    reg [15:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
 
-   // Signal with multiple packed dimensions and unpacked dimensions
-   // reg [3:0][7:0] multi_packed[2:0] means:
-   // - unpacked: [2:0] (3 elements)
-   // - packed: [7:0] (8 bits per element) and [3:0] (4 bits per subword)
-   // So multi_packed[0] = 32-bit value, multi_packed[0][0] through [0][3] are 8-bit subwords
    reg [3:0] [7:0] multi_packed[2:0]  /*verilator public_flat_rw */;
 
    reg [7:0]       text_byte    /*verilator public_flat_rw @(posedge clk) */;
@@ -109,19 +104,16 @@ extern "C" int mon_check();
       sig_desc = 32'hDEAD_BEEF;
       sig_asc  = 32'h1234_5678;
 
-      // Initialize mem_2d: mem_2d[i][j] = i*8 + j
       for (int i = 0; i < 4; i++) begin
          for (int j = 0; j < 8; j++) begin
             mem_2d[i][j] = 8'(((i * 8) + j));
          end
       end
 
-      // Initialize mem_1d: mem_1d[i] = i * 256
       for (int i = 0; i < 16; i++) begin
          mem_1d[i] = i * 256;
       end
 
-      // Initialize mem_3d: mem_3d[i][j][k] = (i*4) + (j*2) + k
       for (int i = 0; i < 2; i++) begin
          for (int j = 0; j < 2; j++) begin
             for (int k = 0; k < 2; k++) begin
@@ -130,9 +122,6 @@ extern "C" int mon_check();
          end
       end
 
-
-
-      // Initialize multi_packed: multi_packed[i][j] = (i * 4) + j
       for (int i = 0; i < 3; i++) begin
          for (int j = 0; j < 4; j++) begin
             multi_packed[i][j] = 8'((i * 4) + j);

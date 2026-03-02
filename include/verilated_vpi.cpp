@@ -400,12 +400,10 @@ public:
         return dynamic_cast<VerilatedVpioVar*>(reinterpret_cast<VerilatedVpio*>(h));
     }
     uint32_t bitOffset() const override { return m_bitOffset; }
-    // Returns the bit size, accounting for any active part-select narrowing.
     uint32_t bitSize() const {
         if (m_partselBits >= 0) return static_cast<uint32_t>(m_partselBits);
         return VerilatedVpioVarBase::bitSize();
     }
-    // Returns the element count, accounting for any active part-select narrowing.
     uint32_t size() const override {
         if (m_partselBits >= 0) return static_cast<uint32_t>(m_partselBits);
         return VerilatedVpioVarBase::size();
@@ -415,10 +413,7 @@ public:
     uint32_t entSize() const { return m_entSize; }
     const std::vector<int32_t>& index() const { return m_index; }
     // Create a part-selected view of this variable with the given bit range [hi:lo].
-    // The range is validated against the current packed dimension's declared range.
-    // Returns nullptr if the range is invalid or out of bounds.
     VerilatedVpioVar* withPartSelect(int32_t hi, int32_t lo) const {
-        // Part-select only applies to packed dimensions
         if (isIndexedDimUnpacked()) return nullptr;
 
         // Need a packed range to select from
@@ -433,7 +428,6 @@ public:
         const int32_t decl_lo = std::min(decl_left, decl_right);
         const int32_t decl_hi = std::max(decl_left, decl_right);
 
-        // Range check
         if (sel_lo < decl_lo || sel_hi > decl_hi) return nullptr;
 
         const int32_t width = sel_hi - sel_lo + 1;
@@ -2223,7 +2217,7 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
 }
 
 // Bit range information extracted from a name string by vpi_parse_indices.
-struct VlVpiBitRange {
+struct VlVpiBitRange final {
     int32_t hi = 0;
     int32_t lo = 0;
     bool valid = false;
