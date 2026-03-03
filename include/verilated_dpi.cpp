@@ -104,7 +104,6 @@ void svGetPartselBit(svBitVecVal* dp, const svBitVecVal* sp, int lsb, int width)
     dp[VL_WORDS_I(width) - 1] &= VL_MASK_I(width);
 }
 void svGetPartselLogic(svLogicVecVal* dp, const svLogicVecVal* sp, int lsb, int width) {
-    // Deprecated - Use vpi_handle_by_multi_index with bit-range part-select instead
     // Verilator supports > 32 bit widths, which is an extension to IEEE DPI
     const int msb = lsb + width - 1;
     const int word_shift = VL_BITWORD_I(lsb);
@@ -154,7 +153,6 @@ void svPutPartselBit(svBitVecVal* dp, const svBitVecVal s, int lbit, int width) 
     }
 }
 // cppcheck-suppress passedByValue
-// Deprecated - Use vpi_handle_by_multi_index with bit-range part-select instead
 void svPutPartselLogic(svLogicVecVal* dp, const svLogicVecVal s, int lbit, int width) {
     const int hbit = lbit + width - 1;
     const int hoffset = VL_BITBIT_I(hbit);
