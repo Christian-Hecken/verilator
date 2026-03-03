@@ -38,7 +38,7 @@
 
 static void m_uvm_error(const char *ID, const char *msg, ...);
 static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag);
-static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel);
+static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag);
 static int uvm_hdl_max_width();
 
 // static print buffer
@@ -87,94 +87,6 @@ static int uvm_hdl_max_width() {
 }
 
 /*
- * Internals: Given a path, look at the path name and determine
- * the handle and any partsel's needed to access it.
- */
-static vpiHandle uvm_hdl_handle_by_name_partsel(char *path, int *is_partsel_ptr, int *hi_ptr,
-                                                int *lo_ptr) {
-  vpiHandle r;
-  char *path_ptr;
-  char *path_base_ptr;
-  int temp;
-  *is_partsel_ptr = 0;
-
-  if (!path || !path[0]) return 0;
-
-  // If direct lookup works, go with that
-  r = vpi_handle_by_name(path, 0);
-  if (r) return r;
-
-  // Find array subscript
-  path_ptr = (char *)(path + strlen(path) - 1);
-  if (*path_ptr != ']') return 0;
-
-  while (path_ptr != path && *path_ptr != ':' && *path_ptr != '[') --path_ptr;
-  if (path_ptr == path) return 0;
-  *lo_ptr = *hi_ptr = atoi(path_ptr + 1);
-  *is_partsel_ptr = 1;
-
-  if (*path_ptr == ':') {
-    --path_ptr;  // back over :
-
-    while (path_ptr != path && *path_ptr != '[') --path_ptr;
-    *hi_ptr = atoi(path_ptr + 1);
-    if (path_ptr == path) return 0;
-  }
-
-  if (*lo_ptr > *hi_ptr) {
-    temp = *lo_ptr;
-    *lo_ptr = *hi_ptr;
-    *hi_ptr = temp;
-  }
-
-  path_base_ptr = strndup(path, (path_ptr - path));
-
-  r = vpi_handle_by_name(path_base_ptr, 0);
-  if (!r) return 0;
-
-  {
-    vpiHandle rh;
-    s_vpi_value value;
-    int req_width_m1;
-    int decl_ranged = 0;
-    int decl_lo;
-    int decl_hi;
-    int decl_left = -1;
-    int decl_right = -1;
-    rh = vpi_handle(vpiLeftRange, r);
-    if (rh) {
-      value.format = vpiIntVal;
-      vpi_get_value(rh, &value);
-      decl_left = value.value.integer;
-      vpi_release_handle(rh);
-    }
-    rh = vpi_handle(vpiRightRange, r);
-    if (rh) {
-      value.format = vpiIntVal;
-      vpi_get_value(rh, &value);
-      decl_ranged = 1;
-      decl_right = value.value.integer;
-      vpi_release_handle(rh);
-    }
-    if (!decl_ranged) {
-      // vpi_printf((PLI_BYTE8 *)"Outside declaration '%s' range %d:%d\n",
-      //            path, decl_left, decl_right);
-      return 0;
-    }
-    // vpi_printf((PLI_BYTE8 *)"%s:%d: req %d:%d decl %d:%d for '%s'\n",
-    //            __FILE__, __LINE__, *hi_ptr, *lo_ptr, decl_left, decl_right, path);
-    decl_lo = (decl_left > decl_right) ? decl_right : decl_left;
-    decl_hi = (decl_left > decl_right) ? decl_left : decl_right;
-    if (*lo_ptr < decl_lo) return 0;
-    if (*hi_ptr > decl_hi) return 0;
-    req_width_m1 = *hi_ptr - *lo_ptr;
-    *lo_ptr = (decl_left > decl_right) ? (*lo_ptr - decl_lo) : (decl_right - *hi_ptr);
-    *hi_ptr = *lo_ptr + req_width_m1;
-  }
-  return r;
-}
-
-/*
  * Given a path, look the path name up using the PLI,
  * and set it to 'value'.
  */
@@ -182,11 +94,10 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
   vpiHandle r;
   s_vpi_value value_s = {vpiIntVal, {0}};
   s_vpi_time time_s = {vpiSimTime, 0, 0, 0.0};
-  int is_partsel, hi, lo;
   int size;
   static int s_maxsize = -1;
 
-  r = uvm_hdl_handle_by_name_partsel(path, &is_partsel, &hi, &lo);
+  r = vpi_handle_by_name(path, 0);
   if (r == 0) {
     m_uvm_error("UVM/DPI/HDL_SET",
                 "set: unable to locate hdl path (%s)\n Either the name is incorrect, "
@@ -195,34 +106,21 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
     return 0;
   }
 
-  if (!is_partsel) {
-    value_s.format = vpiVectorVal;
-    value_s.value.vector = value;
-    vpi_put_value(r, &value_s, &time_s, flag);
-  } else {
-    if (s_maxsize == -1) s_maxsize = uvm_hdl_max_width();
-    size = vpi_get(vpiSize, r);
-    if (size > s_maxsize) {
-      m_uvm_error("UVM/DPI/VLOG_PUT",
-                  "hdl path '%s' is %0d bits, but the maximum size is %0d.  "
-                  "You can increase the maximum via a compile-time flag: "
-                  "+define+UVM_HDL_MAX_WIDTH=<value>",
-                  path, size, s_maxsize);
-      vpi_release_handle(r);
-      return 0;
-    }
-
-    value_s.format = vpiVectorVal;
-    vpi_get_value(r, &value_s);
-
-    for (int i = 0; i < (((hi - lo + 1) / 32) + 1); ++i) {
-      int subsize = hi - (lo + (i << 5)) + 1;
-      if (subsize > 32) subsize = 32;
-      svPutPartselLogic(&value_s.value.vector[i], value[i], lo + (i << 5), subsize);
-    }
-    vpi_put_value(r, &value_s, &time_s, flag);
+  if (s_maxsize == -1) s_maxsize = uvm_hdl_max_width();
+  size = vpi_get(vpiSize, r);
+  if (size > s_maxsize) {
+    m_uvm_error("UVM/DPI/VLOG_PUT",
+                "hdl path '%s' is %0d bits, but the maximum size is %0d.  "
+                "You can increase the maximum via a compile-time flag: "
+                "+define+UVM_HDL_MAX_WIDTH=<value>",
+                path, size, s_maxsize);
+    vpi_release_handle(r);
+    return 0;
   }
 
+  value_s.format = vpiVectorVal;
+  value_s.value.vector = value;
+  vpi_put_value(r, &value_s, &time_s, flag);
   vpi_release_handle(r);
 
   return 1;
@@ -232,14 +130,13 @@ static int uvm_hdl_set_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
  * Given a path, look the path name up using the PLI
  * and return its 'value'.
  */
-static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int partsel) {
+static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag) {
   static int s_maxsize = -1;
   int i, size, chunks;
   vpiHandle r;
   s_vpi_value value_s;
-  int is_partsel, hi, lo;
 
-  r = uvm_hdl_handle_by_name_partsel(path, &is_partsel, &hi, &lo);
+  r = vpi_handle_by_name(path, 0);
   if (r == 0) {
     m_uvm_error("UVM/DPI/VLOG_GET",
                 "unable to locate hdl path (%s)\n Either the name is incorrect, or you "
@@ -265,15 +162,9 @@ static int uvm_hdl_get_vlog(char *path, p_vpi_vecval value, PLI_INT32 flag, int 
   value_s.format = vpiVectorVal;
   vpi_get_value(r, &value_s);
   // Note upper bits are not cleared, other simulators do likewise
-  if (!is_partsel) {
-    // Keep as separate branch as subroutine can potentially inline and highly optimize
-    for (i = 0; i < chunks; ++i) {
-      value[i].aval = value_s.value.vector[i].aval;
-      value[i].bval = value_s.value.vector[i].bval;
-    }
-  } else {
-    // Verilator supports > 32 bit widths, which is an extension to IEEE DPI
-    svGetPartselLogic(value, value_s.value.vector, lo, hi - lo + 1);
+  for (i = 0; i < chunks; ++i) {
+    value[i].aval = value_s.value.vector[i].aval;
+    value[i].bval = value_s.value.vector[i].bval;
   }
   // vpi_printf((PLI_BYTE8 *)"uvm_hdl_get_vlog(%s,%0x)\n", path, value[0].aval);
   vpi_release_handle(r);
@@ -300,7 +191,7 @@ int uvm_hdl_check_path(char *path) {
  * or the FLI, and return its 'value'.
  */
 int uvm_hdl_read(char *path, p_vpi_vecval value) {
-  return uvm_hdl_get_vlog(path, value, vpiNoDelay, 0);
+  return uvm_hdl_get_vlog(path, value, vpiNoDelay);
 }
 
 /*
