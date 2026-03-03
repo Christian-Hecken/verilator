@@ -1265,11 +1265,11 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 24);  // 0x18
 
         // Ascending-range element: mem_3d[1][1][1] = 96'(7) = 7 = 0x...000007
-        TestVpiHandle vh_asc = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][3:0]", nullptr);
+        TestVpiHandle vh_asc = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][92:95]", nullptr);
         CHECK_RESULT_NZ(vh_asc);
         CHECK_RESULT(vpi_get(vpiSize, vh_asc), 4);
         vpi_get_value(vh_asc, &v);
-        CHECK_RESULT(v.value.integer, 7);  // [3:0] of 0x...000007
+        CHECK_RESULT(v.value.integer, 7);  // [92:95] of 0x...000007
 
         // Part-select combined with array index: mem_2d[2][3] = 19 = 0x13
         TestVpiHandle vh_2d_arr = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][3][3:0]", nullptr);
@@ -1279,7 +1279,7 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 0x3);
 
         // Part-select on fully-indexed 3D array: mem_3d[1][1][1] = 7
-        TestVpiHandle vh_3d_ps = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][3:0]", nullptr);
+        TestVpiHandle vh_3d_ps = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][92:95]", nullptr);
         CHECK_RESULT_NZ(vh_3d_ps);
         CHECK_RESULT(vpi_get(vpiSize, vh_3d_ps), 4);
         vpi_get_value(vh_3d_ps, &v);
