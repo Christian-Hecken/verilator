@@ -2216,7 +2216,7 @@ void vpi_get_systf_info(vpiHandle /*object*/, p_vpi_systf_data /*systf_data_p*/)
     VL_VPI_UNIMP_();
 }
 
-// Bit range information extracted from a name string by vpi_parse_indices.
+// Bit range information extracted from a name string by vl_vpi_parse_indices.
 struct VlVpiBitRange final {
     int32_t hi = 0;
     int32_t lo = 0;
@@ -2228,7 +2228,7 @@ struct VlVpiBitRange final {
 // e.g., "mem[0][3][15:8]" -> name becomes "mem", indices = {0, 3}, bitRange = {15, 8}
 // e.g., "signal[31:0]" -> name becomes "signal", indices = {}, bitRange = {31, 0}
 // Returns true if any brackets were parsed successfully, false otherwise.
-static bool vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices,
+static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices,
                               VlVpiBitRange* bitRange = nullptr) {
     if (name.empty() || name.back() != ']') return false;
 
@@ -2302,7 +2302,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     std::string scopeAndName = namep;
     std::vector<PLI_INT32> indices;
     VlVpiBitRange bitRange;
-    const bool has_indices = vpi_parse_indices(scopeAndName, indices, &bitRange);
+    const bool has_indices = vl_vpi_parse_indices(scopeAndName, indices, &bitRange);
 
     const VerilatedVar* varp = nullptr;
     const VerilatedScope* scopep;
