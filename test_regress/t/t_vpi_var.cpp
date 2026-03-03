@@ -1243,32 +1243,33 @@ int _mon_check_multi_index() {
         // Part-select with remaining unpacked dims (not fully indexed)
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][7:0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0][7:0]", nullptr));
-        // Part-select out of range
-        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[99:90]", nullptr));
-        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[32:24]", nullptr));
+        // Part-select out of range: mem_2d[0][0] is 8 bits [7:0]
+        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0][15:8]", nullptr));
+        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][0][8:7]", nullptr));
     }
 
     // Bit-range part-select via vpi_handle_by_name
     {
-        // Descending-range signal: sig_desc[31:0] = 32'hDEAD_BEEF
-        TestVpiHandle vh_desc_mid = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
+        // Descending-range element: mem_2d[3][0] = 8'(((3 * 8) + 0)) = 24 = 0x18
+        TestVpiHandle vh_desc_mid = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][0][7:4]", nullptr);
         CHECK_RESULT_NZ(vh_desc_mid);
-        CHECK_RESULT(vpi_get(vpiSize, vh_desc_mid), 8);
+        CHECK_RESULT(vpi_get(vpiSize, vh_desc_mid), 4);
         vpi_get_value(vh_desc_mid, &v);
-        CHECK_RESULT(v.value.integer, 0xBE);
+        CHECK_RESULT(v.value.integer, 0x1);  // [7:4] of 0x18
 
-        TestVpiHandle vh_desc_full = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[31:0]", nullptr);
+        TestVpiHandle vh_desc_full
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][0][7:0]", nullptr);
         CHECK_RESULT_NZ(vh_desc_full);
-        CHECK_RESULT(vpi_get(vpiSize, vh_desc_full), 32);
+        CHECK_RESULT(vpi_get(vpiSize, vh_desc_full), 8);
         vpi_get_value(vh_desc_full, &v);
-        CHECK_RESULT(v.value.integer, (int)0xDEADBEEF);
+        CHECK_RESULT(v.value.integer, 24);  // 0x18
 
-        // Ascending-range signal: sig_asc[0:31] = 32'h1234_5678
-        TestVpiHandle vh_asc = vpi_handle_by_name((PLI_BYTE8*)"t.sig_asc[0:7]", nullptr);
+        // Ascending-range element: mem_3d[1][1][1] = 96'(7) = 7 = 0x...000007
+        TestVpiHandle vh_asc = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][3:0]", nullptr);
         CHECK_RESULT_NZ(vh_asc);
-        CHECK_RESULT(vpi_get(vpiSize, vh_asc), 8);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc), 4);
         vpi_get_value(vh_asc, &v);
-        CHECK_RESULT(v.value.integer, 0x12);
+        CHECK_RESULT(v.value.integer, 7);  // [3:0] of 0x...000007
 
         // Part-select combined with array index: mem_2d[2][3] = 19 = 0x13
         TestVpiHandle vh_2d_arr = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][3][3:0]", nullptr);
@@ -1285,26 +1286,26 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 7);
     }
 
-    // Part-select write: write 0x42 to sig_desc[15:8], verify only those bits change
+    // Part-select write: write 0x2 to mem_2d[3][0][7:4], verify only those bits change
     {
-        TestVpiHandle vh_ps = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc[15:8]", nullptr);
+        TestVpiHandle vh_ps = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][0][7:4]", nullptr);
         CHECK_RESULT_NZ(vh_ps);
 
         s_vpi_value put_val;
         put_val.format = vpiIntVal;
-        put_val.value.integer = 0x42;
+        put_val.value.integer = 0x2;
         s_vpi_time time_s = {vpiSimTime, 0, 0, 0.0};
         vpi_put_value(vh_ps, &put_val, &time_s, vpiNoDelay);
 
-        // Read back full signal
-        TestVpiHandle vh_full = vpi_handle_by_name((PLI_BYTE8*)"t.sig_desc", nullptr);
+        // Read back full element
+        TestVpiHandle vh_full = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[3][0]", nullptr);
         CHECK_RESULT_NZ(vh_full);
         vpi_get_value(vh_full, &v);
-        CHECK_RESULT(v.value.integer, (int)0xDEAD42EF);
+        CHECK_RESULT(v.value.integer, 0x28);  // 0x18 with bits [7:4] changed to 0x2
 
         // Restore original value
-        put_val.value.integer = (int)0xDEADBEEF;
-        vpi_put_value(vh_full, &put_val, &time_s, vpiNoDelay);
+        put_val.value.integer = 0x1;
+        vpi_put_value(vh_ps, &put_val, &time_s, vpiNoDelay);
     }
 
     return 0;

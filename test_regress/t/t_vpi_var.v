@@ -38,18 +38,16 @@ extern "C" int mon_check();
    // verilator lint_off ASCRANGE
    reg [0:61]   quads[2:3]      /*verilator public_flat_rw @(posedge clk) */;
    reg [8:19]   rev   /*verilator public_flat_rw @(posedge clk) */;
-   reg [0:31]   sig_asc         /*verilator public_flat_rw */;
    // verilator lint_on ASCRANGE
-
-   // Signals for part-select testing
-   reg [31:0]      sig_desc     /*verilator public_flat_rw */;
 
    reg [31:0]      count        /*verilator public_flat */;
    reg [31:0]      half_count   /*verilator public_flat_rd */ = 0;
    reg [31:0]      delayed      /*verilator public_flat_rw */;
    reg [31:0]      delayed_mem [16] /*verilator public_flat_rw */;
    reg [7:0]       mem_2d[3:0][7:0]  /*verilator public_flat_rw */;  // Descending indices
-   reg [95:0]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
+   // verilator lint_off ASCRANGE
+   reg [0:95]      mem_3d[0:1][1:0][0:1]  /*verilator public_flat_rw */;  // Mixed: asc, desc, asc
+   // verilator lint_on ASCRANGE
 
    reg [3:0] [7:0] multi_packed[2:0]  /*verilator public_flat_rw */;
    reg             unpacked_only[7:0];
@@ -100,9 +98,6 @@ extern "C" int mon_check();
       str1 = "hello";
 
       rev = 12'habc;
-
-      sig_desc = 32'hDEAD_BEEF;
-      sig_asc  = 32'h1234_5678;
 
       for (int i = 0; i < 4; i++) begin
          for (int j = 0; j < 8; j++) begin
