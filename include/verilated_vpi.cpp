@@ -4145,17 +4145,14 @@ PLI_INT32 vpi_control(PLI_INT32 operation, ...) {
 }
 
 vpiHandle vpi_handle_by_multi_index(vpiHandle obj, PLI_INT32 num_index, PLI_INT32* index_array) {
-    // Get handle by applying multiple indices at once
     VL_DEBUG_IF_PLI(VL_DBG_MSGF("- vpi: vpi_handle_by_multi_index %p %d\n", obj, num_index););
     VerilatedVpiImp::assertOneCheck();
     VL_VPI_ERROR_RESET_();
 
-    // Validate inputs (silently return nullptr for invalid input, like vpi_handle_by_index does)
     if (VL_UNLIKELY(!obj)) return nullptr;
     if (VL_UNLIKELY(!index_array)) return nullptr;
     if (VL_UNLIKELY(num_index <= 0)) return nullptr;
 
-    // Apply each index sequentially by calling vpi_handle_by_index
     vpiHandle result_handle = obj;
     for (PLI_INT32 i = 0; i < num_index; ++i) {
         result_handle = vpi_handle_by_index(result_handle, index_array[i]);
