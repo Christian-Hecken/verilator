@@ -1264,12 +1264,45 @@ int _mon_check_multi_index() {
         vpi_get_value(vh_desc_full, &v);
         CHECK_RESULT(v.value.integer, 24);  // 0x18
 
-        // Ascending-range element: mem_3d[1][1][1] = 96'(7) = 7 = 0x...000007
-        TestVpiHandle vh_asc = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][92:95]", nullptr);
-        CHECK_RESULT_NZ(vh_asc);
-        CHECK_RESULT(vpi_get(vpiSize, vh_asc), 4);
-        vpi_get_value(vh_asc, &v);
+        // Ascending packed range behavior is explicit:
+        // mem_3d has packed declaration [0:95], so [3:0] selects the MSB-end nibble,
+        // while [92:95] selects the LSB-end nibble where value 7 resides.
+        TestVpiHandle vh_asc_lsb
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][92:95]", nullptr);
+        CHECK_RESULT_NZ(vh_asc_lsb);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc_lsb), 4);
+        vpi_get_value(vh_asc_lsb, &v);
         CHECK_RESULT(v.value.integer, 7);  // [92:95] of 0x...000007
+
+        // Select order [95:92] is also accepted and refers to the same bit set as [92:95].
+        TestVpiHandle vh_asc_lsb_rev
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][95:92]", nullptr);
+        CHECK_RESULT_NZ(vh_asc_lsb_rev);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc_lsb_rev), 4);
+        vpi_get_value(vh_asc_lsb_rev, &v);
+        CHECK_RESULT(v.value.integer, 7);
+
+        TestVpiHandle vh_asc_mid
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][90:94]", nullptr);
+        CHECK_RESULT_NZ(vh_asc_mid);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc_mid), 5);
+        vpi_get_value(vh_asc_mid, &v);
+        CHECK_RESULT(v.value.integer, 3);  // 5-bit window containing 0b00011
+
+        TestVpiHandle vh_asc_mid_rev
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][95:91]", nullptr);
+        CHECK_RESULT_NZ(vh_asc_mid_rev);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc_mid_rev), 5);
+        vpi_get_value(vh_asc_mid_rev, &v);
+        CHECK_RESULT(v.value.integer, 7);
+
+        // Cross-order select on ascending declaration is allowed and maps by declared indices.
+        TestVpiHandle vh_asc_msb
+            = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][3:0]", nullptr);
+        CHECK_RESULT_NZ(vh_asc_msb);
+        CHECK_RESULT(vpi_get(vpiSize, vh_asc_msb), 4);
+        vpi_get_value(vh_asc_msb, &v);
+        CHECK_RESULT(v.value.integer, 0);  // [3:0] is MSB-end for [0:95]
 
         // Part-select combined with array index: mem_2d[2][3] = 19 = 0x13
         TestVpiHandle vh_2d_arr = vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[2][3][3:0]", nullptr);
@@ -1278,12 +1311,12 @@ int _mon_check_multi_index() {
         vpi_get_value(vh_2d_arr, &v);
         CHECK_RESULT(v.value.integer, 0x3);
 
-        // Part-select on fully-indexed 3D array: mem_3d[1][1][1] = 7
-        TestVpiHandle vh_3d_ps = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][92:95]", nullptr);
+        // Equivalent ascending-order spelling of the MSB-end nibble
+        TestVpiHandle vh_3d_ps = vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[1][1][1][0:3]", nullptr);
         CHECK_RESULT_NZ(vh_3d_ps);
         CHECK_RESULT(vpi_get(vpiSize, vh_3d_ps), 4);
         vpi_get_value(vh_3d_ps, &v);
-        CHECK_RESULT(v.value.integer, 7);
+        CHECK_RESULT(v.value.integer, 0);
     }
 
     // Part-select write: write 0x2 to mem_2d[3][0][7:4], verify only those bits change
