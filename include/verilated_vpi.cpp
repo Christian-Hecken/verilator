@@ -2298,7 +2298,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     std::string scopeAndName = namep;
     static thread_local std::vector<PLI_INT32> indices;
     VlVpiBitRange bitRange;
-    const bool has_indices = vl_vpi_parse_indices(scopeAndName, indices, &bitRange);
+    const bool hasIndices = vl_vpi_parse_indices(scopeAndName, indices, &bitRange);
 
     const VerilatedVar* varp = nullptr;
     const VerilatedScope* scopep;
@@ -2367,29 +2367,29 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     if (!varp) return nullptr;
 
     // Create the initial variable handle
-    vpiHandle result_handle;
+    vpiHandle resultHandle;
     if (varp->isParam()) {
-        result_handle = (new VerilatedVpioParam{varp, scopep})->castVpiHandle();
+        resultHandle = (new VerilatedVpioParam{varp, scopep})->castVpiHandle();
     } else {
-        result_handle = (new VerilatedVpioVar{varp, scopep})->castVpiHandle();
+        resultHandle = (new VerilatedVpioVar{varp, scopep})->castVpiHandle();
     }
 
     // If we have indices, apply them using vpi_handle_by_multi_index
-    if (has_indices && !indices.empty()) {
-        result_handle = vpi_handle_by_multi_index(result_handle, indices.size(), indices.data());
-        if (!result_handle) return nullptr;
+    if (hasIndices && !indices.empty()) {
+        resultHandle = vpi_handle_by_multi_index(resultHandle, indices.size(), indices.data());
+        if (!resultHandle) return nullptr;
     }
 
     // If we have a bit range part-select, apply it
     if (bitRange.valid) {
-        VerilatedVpioVar* const varop = VerilatedVpioVar::castp(result_handle);
+        VerilatedVpioVar* const varop = VerilatedVpioVar::castp(resultHandle);
         if (!varop) return nullptr;
         VerilatedVpioVar* const partsel = varop->withPartSelect(bitRange.hi, bitRange.lo);
         if (!partsel) return nullptr;
-        result_handle = partsel->castVpiHandle();
+        resultHandle = partsel->castVpiHandle();
     }
 
-    return result_handle;
+    return resultHandle;
 }
 
 vpiHandle vpi_handle_by_index(vpiHandle object, PLI_INT32 indx) {
