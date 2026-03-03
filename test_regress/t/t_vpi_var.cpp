@@ -1236,6 +1236,7 @@ int _mon_check_multi_index() {
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2][1:4]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0+:2][0]", nullptr));
+        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0-:2][0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0:2]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0:1][0][0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_3d[0][0:1][0]", nullptr));

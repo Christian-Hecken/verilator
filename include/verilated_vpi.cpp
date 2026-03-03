@@ -2229,7 +2229,7 @@ struct VlVpiBitRange final {
 // e.g., "signal[31:0]" -> name becomes "signal", indices = {}, bitRange = {31, 0}
 // Returns true if any brackets were parsed successfully, false otherwise.
 static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indices,
-                              VlVpiBitRange* bitRange = nullptr) {
+                                 VlVpiBitRange* bitRange = nullptr) {
     if (name.empty() || name.back() != ']') return false;
 
     indices.clear();
@@ -2251,10 +2251,6 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
         if (first && bitRange) {
             const size_t colon = content.find(':');
             if (colon != std::string::npos) {
-                // Reject indexed part-select (+: or -:)
-                if (content.find('+') != std::string::npos
-                    || content.find('-') != std::string::npos)
-                    return false;
                 char* endp = nullptr;
                 const long hi_val = std::strtol(content.c_str(), &endp, 10);
                 if (!endp || *endp != ':') return false;
@@ -2300,7 +2296,7 @@ vpiHandle vpi_handle_by_name(PLI_BYTE8* namep, vpiHandle scope) {
     // Parse any array indices and optional bit range from the name
     // e.g., "mem[0][3][2]" or "signal[15:8]" or "mem[0][3][15:8]"
     std::string scopeAndName = namep;
-    std::vector<PLI_INT32> indices;
+    static thread_local std::vector<PLI_INT32> indices;
     VlVpiBitRange bitRange;
     const bool has_indices = vl_vpi_parse_indices(scopeAndName, indices, &bitRange);
 
