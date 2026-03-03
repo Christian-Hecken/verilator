@@ -1156,6 +1156,67 @@ int _mon_check_multi_index() {
 
     // vpi_handle_by_name indexing tests
 
+    {
+        // Escaped identifier with literal brackets in the name
+        TestVpiHandle vh_esc
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_with_brackets[3] ", nullptr);
+        CHECK_RESULT_NZ(vh_esc);
+        CHECK_RESULT(vpi_get(vpiType, vh_esc), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_esc), 8);
+        vpi_get_value(vh_esc, &v);
+        CHECK_RESULT(v.value.integer, 0x5a);
+
+        // Escaped identifier with whitespace and trailing part-select
+        // \escaped_with_brackets[3] is the identifier, [7:4] is the part-select
+        // 0x5a = 0b01011010, [7:4] = 0b0101 = 5
+        TestVpiHandle vh_esc_ps
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_with_brackets[3] [7:4]", nullptr);
+        CHECK_RESULT_NZ(vh_esc_ps);
+        CHECK_RESULT(vpi_get(vpiType, vh_esc_ps), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_esc_ps), 4);
+        vpi_get_value(vh_esc_ps, &v);
+        CHECK_RESULT(v.value.integer, 0x5);
+
+        // Escaped identifier with multiple whitespaces and trailing part-select
+        // \escaped_with_brackets[3] is the identifier, [3:0] is the part-select
+        // 0x5a = 0b01011010, [3:0] = 0b1010 = 0xa
+        TestVpiHandle vh_esc_ps_multispace
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_with_brackets[3]  [3:0]", nullptr);
+        CHECK_RESULT_NZ(vh_esc_ps_multispace);
+        CHECK_RESULT(vpi_get(vpiType, vh_esc_ps_multispace), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_esc_ps_multispace), 4);
+        vpi_get_value(vh_esc_ps_multispace, &v);
+        CHECK_RESULT(v.value.integer, 0xa);
+
+        // Escaped instance name (with brackets as part of identifier) accessed through hierarchy
+        TestVpiHandle vh_escaped_inst_sig
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .sig", nullptr);
+        CHECK_RESULT_NZ(vh_escaped_inst_sig);
+        CHECK_RESULT(vpi_get(vpiType, vh_escaped_inst_sig), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_escaped_inst_sig), 8);
+
+        // Escaped instance name with part-select
+        TestVpiHandle vh_escaped_inst_sig_ps
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .sig[3:0]", nullptr);
+        CHECK_RESULT_NZ(vh_escaped_inst_sig_ps);
+        CHECK_RESULT(vpi_get(vpiType, vh_escaped_inst_sig_ps), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_escaped_inst_sig_ps), 4);
+
+        // Two escaped identifiers in the path: escaped instance + escaped signal name
+        TestVpiHandle vh_two_escapes
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .\\escaped_sig[1] ", nullptr);
+        CHECK_RESULT_NZ(vh_two_escapes);
+        CHECK_RESULT(vpi_get(vpiType, vh_two_escapes), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_two_escapes), 8);
+
+        // Two escaped identifiers with part-select
+        TestVpiHandle vh_two_escapes_ps = vpi_handle_by_name(
+            (PLI_BYTE8*)"t.\\escaped_inst[0] .\\escaped_sig[1] [3:0]", nullptr);
+        CHECK_RESULT_NZ(vh_two_escapes_ps);
+        CHECK_RESULT(vpi_get(vpiType, vh_two_escapes_ps), vpiReg);
+        CHECK_RESULT(vpi_get(vpiSize, vh_two_escapes_ps), 4);
+    }
+
     // vpi_handle_by_name with array indexing
     {
         TestVpiHandle vh_1d = vpi_handle_by_name((PLI_BYTE8*)"t.quads[2]", nullptr);
@@ -1248,6 +1309,9 @@ int _mon_check_multi_index() {
         // Whitespace in indices (unsupported)
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[ 0 ][ 1 ]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.mem_2d[0][1]  ", nullptr));
+        // Plain identifier with whitespace before part-select (unsupported; only escaped
+        // identifiers may have whitespace before a trailing part-select)
+        CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .sig [3:0]", nullptr));
         // Indexing non-array signals
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.onebit[0]", nullptr));
         CHECK_RESULT_Z(vpi_handle_by_name((PLI_BYTE8*)"t.twoone[0]", nullptr));

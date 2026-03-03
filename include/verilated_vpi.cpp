@@ -2233,6 +2233,13 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
                                  VlVpiBitRange* bitRange = nullptr) {
     if (name.empty() || name.back() != ']') return false;
 
+    // For escaped identifiers, only parse brackets that follow the identifier's terminating
+    // space. Use rfind to locate the last escaped identifier in the name (which is always
+    // the basename when indices/part-selects are present).
+    size_t escapeSpacePos = std::string::npos;
+    const size_t backslashPos = name.rfind('\\');
+    if (backslashPos != std::string::npos) escapeSpacePos = name.find(' ', backslashPos);
+
     indices.clear();
     size_t end = name.length();
     bool first = true;
@@ -2244,6 +2251,10 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
         while (open > 0 && name[open - 1] != '[') --open;
         if (open == 0) return false;  // No matching '['
         --open;  // Points to '['
+
+        // For escaped identifiers: skip brackets that come before the terminating space
+        // (they are part of the identifier name, not indices/part-selects)
+        if (escapeSpacePos != std::string::npos && open < escapeSpacePos) break;
 
         const std::string content = name.substr(open + 1, close - open - 1);
         if (content.empty()) return false;  // Empty brackets []
@@ -2277,11 +2288,29 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
 
     if (indices.empty() && !(bitRange && bitRange->valid)) return false;
 
-    // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
+   // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
     std::reverse(indices.begin(), indices.end());
 
     // Truncate name to remove the indices
     name.erase(end);
+
+    // If the basename (after removing indices) is an escaped identifier, keep exactly 
+    // its one terminating space and trim any extra spaces that may have separated 
+    // the escaped identifier from the part-select.  For example:
+    // "\\escaped[0]  [3:0]" becomes "\\escaped[0] " (one space, not two)
+    // But don't trim beyond the escaped identifier itself.
+    if (escapeSpacePos != std::string::npos && name.length() > escapeSpacePos + 1) {
+        // Find where extra spaces end (if any)
+        size_t firstNonSpace = escapeSpacePos + 1;
+        while (firstNonSpace < name.length() && name[firstNonSpace] == ' ') {
+            ++firstNonSpace;
+        }
+        // If we found extra spaces (more than one space after the escaped identifier)
+        // and there's nothing after those spaces, trim to just one space
+        if (firstNonSpace > escapeSpacePos + 1 && firstNonSpace == name.length()) {
+            name.erase(escapeSpacePos + 1);
+        }
+    }
 
     return true;
 }
