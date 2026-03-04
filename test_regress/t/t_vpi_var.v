@@ -176,7 +176,7 @@ extern "C" int mon_check();
    end
    endgenerate
 
-   arr #(.LENGTH(8)) \escaped_inst[0] ();
+   arr #(.LENGTH(8)) \escaped.inst[0] ();
 
 endmodule : t
 

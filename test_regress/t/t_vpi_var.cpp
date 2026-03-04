@@ -1190,28 +1190,28 @@ int _mon_check_multi_index() {
 
         // Escaped instance name (with brackets as part of identifier) accessed through hierarchy
         TestVpiHandle vh_escaped_inst_sig
-            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .sig", nullptr);
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped.inst[0] .sig", nullptr);
         CHECK_RESULT_NZ(vh_escaped_inst_sig);
         CHECK_RESULT(vpi_get(vpiType, vh_escaped_inst_sig), vpiReg);
         CHECK_RESULT(vpi_get(vpiSize, vh_escaped_inst_sig), 8);
 
         // Escaped instance name with part-select
         TestVpiHandle vh_escaped_inst_sig_ps
-            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .sig[3:0]", nullptr);
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped.inst[0] .sig[3:0]", nullptr);
         CHECK_RESULT_NZ(vh_escaped_inst_sig_ps);
         CHECK_RESULT(vpi_get(vpiType, vh_escaped_inst_sig_ps), vpiReg);
         CHECK_RESULT(vpi_get(vpiSize, vh_escaped_inst_sig_ps), 4);
 
         // Two escaped identifiers in the path: escaped instance + escaped signal name
         TestVpiHandle vh_two_escapes
-            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_inst[0] .\\escaped_sig[1] ", nullptr);
+            = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped.inst[0] .\\escaped_sig[1] ", nullptr);
         CHECK_RESULT_NZ(vh_two_escapes);
         CHECK_RESULT(vpi_get(vpiType, vh_two_escapes), vpiReg);
         CHECK_RESULT(vpi_get(vpiSize, vh_two_escapes), 8);
 
         // Two escaped identifiers with part-select
         TestVpiHandle vh_two_escapes_ps = vpi_handle_by_name(
-            (PLI_BYTE8*)"t.\\escaped_inst[0] .\\escaped_sig[1] [3:0]", nullptr);
+            (PLI_BYTE8*)"t.\\escaped.inst[0] .\\escaped_sig[1] [3:0]", nullptr);
         CHECK_RESULT_NZ(vh_two_escapes_ps);
         CHECK_RESULT(vpi_get(vpiType, vh_two_escapes_ps), vpiReg);
         CHECK_RESULT(vpi_get(vpiSize, vh_two_escapes_ps), 4);
