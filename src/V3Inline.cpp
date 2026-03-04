@@ -477,12 +477,20 @@ bool inlinePort(const AstVar* nodep) {
 
 // Connect the given port 'nodep' (being inlined into 'modp') to the given
 // expression (from the Cell Pin)
-void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp) {
+void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp,
+                 VDouble0& statPortsAliased, VDouble0& statPortsBlockedRW) {
     UINFO(6, "Connecting " << pinExprp);
     UINFO(6, "        to " << nodep);
 
     // Decide whether to inline the port variable or use continuous assignments
     const bool inlineIt = inlinePort(nodep);
+
+    // Track statistics: how many port vars are aliased vs blocked by public RW
+    if (inlineIt) {
+        ++statPortsAliased;
+    } else if (nodep->isSigUserRWPublic()) {
+        ++statPortsBlockedRW;
+    }
 
     // If we deccided to inline it, record the expression to substitute this variable with
     if (inlineIt) nodep->user2p(pinExprp);
@@ -562,7 +570,8 @@ void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp) {
 }
 
 // Inline 'cellp' into 'modp'. 'last' indicatest this is tha last instance of the inlined module
-void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last) {
+void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last, VDouble0& statPortsAliased,
+                VDouble0& statPortsBlockedRW) {
     UINFO(5, " Inline Cell  " << cellp);
     UINFO(5, " into Module  " << modp);
 
@@ -614,7 +623,7 @@ void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last) {
         AstNodeExpr* const pinExprp = VN_AS(pinp->exprp(), NodeExpr);
 
         // Connect up the port
-        connectPort(modp, newModVarp, pinExprp);
+        connectPort(modp, newModVarp, pinExprp, statPortsAliased, statPortsBlockedRW);
     }
 
     // Cleanup var names, etc, to not conflict, relink replaced variables
@@ -646,6 +655,10 @@ void process(AstNetlist* netlistp, ModuleStateUser1Allocator& moduleStates) {
 
     // Number of inlined instances, for statistics
     VDouble0 m_nInlined;
+    // Number of port variables aliased (eliminated) during inlining
+    VDouble0 m_statPortsAliased;
+    // Number of port variables blocked from aliasing due to isSigUserRWPublic()
+    VDouble0 m_statPortsBlockedRW;
 
     // We want to inline bottom up. The modules under the netlist are in
     // dependency order (top first, leaves last), so find the end of the list.
@@ -661,11 +674,14 @@ void process(AstNetlist* netlistp, ModuleStateUser1Allocator& moduleStates) {
             ModuleState& childState = moduleStates(cellp->modp());
             if (!childState.m_inlined) continue;
             ++m_nInlined;
-            inlineCell(modp, cellp, --childState.m_cellRefs == 0);
+            inlineCell(modp, cellp, --childState.m_cellRefs == 0, m_statPortsAliased,
+                       m_statPortsBlockedRW);
         }
     }
 
     V3Stats::addStat("Optimizations, Inlined instances", m_nInlined);
+    V3Stats::addStat("Optimizations, Inline port vars aliased", m_statPortsAliased);
+    V3Stats::addStat("Optimizations, Inline port vars blocked (public RW)", m_statPortsBlockedRW);
 
     // Clean up AstIfaceRefDType references
     // If the cell has been removed let's make sure we don't leave a

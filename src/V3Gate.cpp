@@ -149,6 +149,9 @@ class GateGraph final : public V3Graph {
     // AstVarScope::user1p      -> GateVarVertex* for usage var, 0=not set yet
     const VNUser1InUse m_inuser1;
 
+    // STATS
+    size_t m_statSigPublicBlocked = 0;  // Variables blocked from gate reduction by public status
+
 public:
     GateVarVertex* makeVarVertex(AstVarScope* vscp) {
         GateVarVertex* vVtxp = reinterpret_cast<GateVarVertex*>(vscp->user1p());
@@ -165,6 +168,7 @@ public:
                 // Public signals shouldn't be changed, pli code might be messing with them
                 vVtxp->clearReducibleAndDedupable("SigPublic");
                 vVtxp->setConsumed("SigPublic");
+                ++m_statSigPublicBlocked;
             }
             if (vscp->varp()->isIO() && vscp->scopep()->isTop()) {
                 // We may need to convert to/from sysc/reg sigs
@@ -175,6 +179,8 @@ public:
         }
         return vVtxp;
     }
+
+    size_t sigPublicBlocked() const { return m_statSigPublicBlocked; }
 
     void addEdge(GateVarVertex* srcp, GateLogicVertex* dstp, int weight) {
         new GateEdge{this, srcp, dstp, weight};
@@ -1275,6 +1281,10 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Build the graph
         std::unique_ptr<GateGraph> graphp = GateBuildVisitor::apply(netlistp);
         if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph");
+
+        // Emit stat for how many variables were blocked from gate reduction by public status
+        V3Stats::addStat("Optimizations, Gate sigs blocked (public)",
+                         graphp->sigPublicBlocked());
 
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);
