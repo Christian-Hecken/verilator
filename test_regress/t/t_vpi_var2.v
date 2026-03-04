@@ -59,7 +59,7 @@ extern "C" int mon_check();
 /*verilator public_flat_rw_on*/
    reg [31:0]      delayed;
    reg [31:0]      delayed_mem [16];
-   reg [7:0]       \escaped_with_brackets[3];
+   reg [7:0]       \escaped_with_brackets[3] ;
    reg [7:0]       mem_2d[3:0][7:0];  // Descending indices
    // verilator lint_off ASCRANGE
    reg [0:95]      mem_3d[0:1][1:0][0:1];  // Mixed: asc, desc, asc
@@ -194,6 +194,8 @@ extern "C" int mon_check();
    end
    endgenerate
 
+   arr #(.LENGTH(8)) \escaped.inst[0] ();
+
 endmodule : t
 
 module sub;
@@ -212,6 +214,7 @@ module arr;
 /*verilator public_flat_rw_on*/
    reg [LENGTH-1:0] sig;
    reg [LENGTH-1:0] rfr;
+   reg [LENGTH-1:0] \escaped_sig[1]  /*verilator public_flat_rw*/;
 
    reg            check;
    reg          verbose;
