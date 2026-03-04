@@ -1167,7 +1167,6 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 0x5a);
 
         // Escaped identifier with whitespace and trailing part-select
-        // \escaped_with_brackets[3] is the identifier, [7:4] is the part-select
         // 0x5a = 0b01011010, [7:4] = 0b0101 = 5
         TestVpiHandle vh_esc_ps
             = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_with_brackets[3] [7:4]", nullptr);
@@ -1178,7 +1177,6 @@ int _mon_check_multi_index() {
         CHECK_RESULT(v.value.integer, 0x5);
 
         // Escaped identifier with multiple whitespaces and trailing part-select
-        // \escaped_with_brackets[3] is the identifier, [3:0] is the part-select
         // 0x5a = 0b01011010, [3:0] = 0b1010 = 0xa
         TestVpiHandle vh_esc_ps_multispace
             = vpi_handle_by_name((PLI_BYTE8*)"t.\\escaped_with_brackets[3]  [3:0]", nullptr);

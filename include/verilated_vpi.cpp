@@ -2233,14 +2233,12 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
                                  VlVpiBitRange* bitRange = nullptr) {
     if (name.empty() || name.back() != ']') return false;
 
-    // Collapse consecutive spaces into single spaces (using std::unique)
+    // Collapse consecutive spaces into single spaces
     name.erase(
         std::unique(name.begin(), name.end(), [](char a, char b) { return a == ' ' && b == ' '; }),
         name.end());
 
-    // For escaped identifiers, only parse brackets that follow the identifier's terminating
-    // space. Use rfind to locate the last escaped identifier in the name (which is always
-    // the basename when indices/part-selects are present).
+    // Only parse brackets after the last escaped identifier's terminating space
     size_t escapeSpacePos = std::string::npos;
     const size_t backslashPos = name.rfind('\\');
     if (backslashPos != std::string::npos) escapeSpacePos = name.find(' ', backslashPos);
@@ -2258,7 +2256,6 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
         --open;  // Points to '['
 
         // For escaped identifiers: skip brackets that come before the terminating space
-        // (they are part of the identifier name, not indices/part-selects)
         if (escapeSpacePos != std::string::npos && open < escapeSpacePos) break;
 
         const std::string content = name.substr(open + 1, close - open - 1);
