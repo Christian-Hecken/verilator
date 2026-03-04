@@ -2233,6 +2233,11 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
                                  VlVpiBitRange* bitRange = nullptr) {
     if (name.empty() || name.back() != ']') return false;
 
+    // Collapse consecutive spaces into single spaces (using std::unique)
+    name.erase(
+        std::unique(name.begin(), name.end(), [](char a, char b) { return a == ' ' && b == ' '; }),
+        name.end());
+
     // For escaped identifiers, only parse brackets that follow the identifier's terminating
     // space. Use rfind to locate the last escaped identifier in the name (which is always
     // the basename when indices/part-selects are present).
@@ -2288,29 +2293,11 @@ static bool vl_vpi_parse_indices(std::string& name, std::vector<PLI_INT32>& indi
 
     if (indices.empty() && !(bitRange && bitRange->valid)) return false;
 
-   // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
+    // Reverse indices to get them in forward order [0][3][2] -> {0, 3, 2}
     std::reverse(indices.begin(), indices.end());
 
     // Truncate name to remove the indices
     name.erase(end);
-
-    // If the basename (after removing indices) is an escaped identifier, keep exactly 
-    // its one terminating space and trim any extra spaces that may have separated 
-    // the escaped identifier from the part-select.  For example:
-    // "\\escaped[0]  [3:0]" becomes "\\escaped[0] " (one space, not two)
-    // But don't trim beyond the escaped identifier itself.
-    if (escapeSpacePos != std::string::npos && name.length() > escapeSpacePos + 1) {
-        // Find where extra spaces end (if any)
-        size_t firstNonSpace = escapeSpacePos + 1;
-        while (firstNonSpace < name.length() && name[firstNonSpace] == ' ') {
-            ++firstNonSpace;
-        }
-        // If we found extra spaces (more than one space after the escaped identifier)
-        // and there's nothing after those spaces, trim to just one space
-        if (firstNonSpace > escapeSpacePos + 1 && firstNonSpace == name.length()) {
-            name.erase(escapeSpacePos + 1);
-        }
-    }
 
     return true;
 }
