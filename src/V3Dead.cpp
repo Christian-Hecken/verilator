@@ -85,6 +85,8 @@ class DeadVisitor final : public VNVisitor {
 
     // STATE - Statistic tracking
     VDouble0 m_statFTasksDeadified;
+    // VarScopes that are public and thus excluded from mightElimVar, for dead-code stat tracking
+    std::vector<AstVarScope*> m_publicVscsp;
 
     // METHODS
 
@@ -287,7 +289,15 @@ class DeadVisitor final : public VNVisitor {
         iterateChildren(nodep);
         checkAll(nodep);
         if (nodep->scopep()) nodep->scopep()->user1Inc();
-        if (mightElimVar(nodep->varp())) m_vscsp.push_back(nodep);
+        if (mightElimVar(nodep->varp())) {
+            m_vscsp.push_back(nodep);
+        } else if (m_elimUserVars && nodep->varp()->isSigPublic() && !nodep->varp()->isIO()
+                   && !nodep->varp()->isClassMember() && !nodep->varp()->sensIfacep()) {
+            // Track public non-IO signals in passes that would otherwise eliminate user vars.
+            // If their refcount ends up zero they are dead code kept alive solely by their
+            // public/VPI status.
+            m_publicVscsp.push_back(nodep);
+        }
     }
     void visit(AstVar* nodep) override {
         iterateChildren(nodep);
@@ -595,6 +605,12 @@ public:
     }
     ~DeadVisitor() override {
         V3Stats::addStatSum("Optimizations, deadified FTasks", m_statFTasksDeadified);
+        // Count public signals that are truly dead (zero references) but couldn't be eliminated
+        VDouble0 statDeadPublicVars;
+        for (const AstVarScope* const vscp : m_publicVscsp) {
+            if (vscp->user1() == 0) ++statDeadPublicVars;
+        }
+        V3Stats::addStatSum("Optimizations, Dead vars blocked (public)", statDeadPublicVars);
     };
 };
 
