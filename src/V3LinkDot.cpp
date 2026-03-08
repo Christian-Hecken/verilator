@@ -4813,18 +4813,14 @@ class LinkDotResolveVisitor final : public VNVisitor {
         iterateChildren(nodep);
         AstVarScope* aliasp = LinkDotScopeVisitor::getAliasVarScopep(nodep);
         if (aliasp && aliasp != nodep) {
-            // Propagate the canonical variable's value into the alias variable so that
-            // reads through the alias name see the correct value.  A reverse copy from
-            // alias back to canonical is intentionally omitted: with alias-aware
-            // varInsert (V3EmitCSyms) VPI writes target the canonical address directly,
-            // so the reverse copy is never needed.  Adding it would create a combinational
-            // cycle (clk → assign → t.clk → assign → clk) that triggers UNOPTFLAT.
+            // Aliased variable might still be references from outside,
+            // eg through the VPI, and is traced, so we need the value to propagate.
+            // TODO: this means external writes to the LHS (e.g.: through the VPI) don't work
             AstAssignW* const assignp = new AstAssignW{
                 nodep->fileline(), new AstVarRef{nodep->fileline(), nodep, VAccess::WRITE},
                 new AstVarRef{nodep->fileline(), aliasp, VAccess::READ}};
             assignp->user2(true);
             nodep->addNextHere(new AstAlways{assignp});
-
             // Propagate attributes of the replaced variable,
             // because all references to it are replaced with references to the alias variable
             aliasp->varp()->propagateAttrFrom(nodep->varp());
