@@ -4813,28 +4813,17 @@ class LinkDotResolveVisitor final : public VNVisitor {
         iterateChildren(nodep);
         AstVarScope* aliasp = LinkDotScopeVisitor::getAliasVarScopep(nodep);
         if (aliasp && aliasp != nodep) {
-            // Aliased variable might still be referenced from outside,
-            // e.g. through the VPI, and is traced, so we need the value to
-            // propagate.  The original code only propagated *from* the canonical
-            // variable to the alias which meant external writes to the LHS
-            // (i.e. the non-canonical name) were ignored.  After implementing
-            // alias-aware varInsert the VPI will register the canonical
-            // address, so the bug is unlikely to be hit, but it doesn't hurt
-            // to make the linkage symmetric.
-            AstAssignW* const assignp1 = new AstAssignW{
+            // Propagate the canonical variable's value into the alias variable so that
+            // reads through the alias name see the correct value.  A reverse copy from
+            // alias back to canonical is intentionally omitted: with alias-aware
+            // varInsert (V3EmitCSyms) VPI writes target the canonical address directly,
+            // so the reverse copy is never needed.  Adding it would create a combinational
+            // cycle (clk → assign → t.clk → assign → clk) that triggers UNOPTFLAT.
+            AstAssignW* const assignp = new AstAssignW{
                 nodep->fileline(), new AstVarRef{nodep->fileline(), nodep, VAccess::WRITE},
                 new AstVarRef{nodep->fileline(), aliasp, VAccess::READ}};
-            assignp1->user2(true);
-            nodep->addNextHere(new AstAlways{assignp1});
-
-            // also keep the reverse copy so writes to the LHS propagate
-            // back to the canonical variable (protects against any stray
-            // registrations to the old name).
-            AstAssignW* const assignp2 = new AstAssignW{
-                nodep->fileline(), new AstVarRef{nodep->fileline(), aliasp, VAccess::WRITE},
-                new AstVarRef{nodep->fileline(), nodep, VAccess::READ}};
-            assignp2->user2(true);
-            aliasp->addNextHere(new AstAlways{assignp2});
+            assignp->user2(true);
+            nodep->addNextHere(new AstAlways{assignp});
 
             // Propagate attributes of the replaced variable,
             // because all references to it are replaced with references to the alias variable
