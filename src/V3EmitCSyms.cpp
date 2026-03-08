@@ -23,26 +23,13 @@
 #include "V3StackCount.h"
 #include "V3Stats.h"
 
-// For alias resolution we replicate the same disjoint-set logic that
-// LinkDotScopeVisitor uses internally.  This avoids exposing its internal
-// class in a header.
-#include <unordered_map>
-
-// Ad-hoc alias resolution on VarScope nodes.  The node's user2p() field
-// is used as a parent pointer; follow the chain to find the root and
-// compress paths along the way.
-static AstVarScope* resolveAliasVarScope(AstVarScope* const vscp) {
-    if (vscp->user2p() && vscp != vscp->user2p()) {
-        AstVarScope* const aliasp = resolveAliasVarScope(VN_AS(vscp->user2p(), VarScope));
-        vscp->user2p(aliasp);
-        return aliasp;
-    } else {
-        return vscp;
-    }
-}
+// VPI variable registration uses AstVar::vpiAlias() for alias resolution.
+// V3Gate sets this field when it detects a trivially-aliased public signal (assign A = B),
+// allowing the eliminated variable's VPI handle to point at the surviving storage.
 
 #include <algorithm>
 #include <map>
+#include <unordered_map>
 #include <vector>
 
 VL_DEFINE_DEBUG_FUNCTIONS;
@@ -403,21 +390,20 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         }
     }
 
-    // Track alias information by visiting VarScope nodes.  Each VarScope may
-    // have a user2p() pointer pointing to its canonical alias; the helper above
-    // resolves the full chain.
+    // Track alias information by visiting VarScope nodes.  AstVar::vpiAlias()
+    // records trivial-alias relationships detected by V3Gate (assign A = B);
+    // we follow the chain here to find the canonical storage variable for VPI
+    // registration.  (The former user2p()-based approach is no longer used
+    // because the user2 slot is invalidated by later passes before we reach emit.)
     void visit(AstVarScope* nodep) override {
-        // compute canonical varscope
-        AstVarScope* canon = resolveAliasVarScope(nodep);
-        const AstVar* myvar = nodep->varp();
-        const AstScope* myscp = nodep->scopep();
-        if (canon) {
-            const AstVar* canonVar = canon->varp();
-            m_varToScope[canonVar] = canon->scopep();
-            if (canonVar != myvar) { m_aliasMap[myvar] = canonVar; }
-        } else {
-            m_varToScope[myvar] = myscp;
-        }
+        const AstVar* const myvar = nodep->varp();
+        const AstScope* const myscp = nodep->scopep();
+        // Always record scope for this var (needed when it is itself an alias target)
+        m_varToScope[myvar] = myscp;
+        // Follow the vpiAlias chain transitively to find the canonical storage variable
+        const AstVar* canon = myvar;
+        while (const AstVar* const next = canon->vpiAlias()) canon = next;
+        if (canon != myvar) m_aliasMap[myvar] = canon;
         iterateChildrenConst(nodep);
     }
     void visit(AstNodeCoverDecl* nodep) override {
