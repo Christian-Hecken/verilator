@@ -1283,8 +1283,7 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph");
 
         // Emit stat for how many variables were blocked from gate reduction by public status
-        V3Stats::addStat("Optimizations, Gate sigs blocked (public)",
-                         graphp->sigPublicBlocked());
+        V3Stats::addStat("Optimizations, Gate sigs blocked (public)", graphp->sigPublicBlocked());
 
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);

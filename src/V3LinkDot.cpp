@@ -4813,14 +4813,29 @@ class LinkDotResolveVisitor final : public VNVisitor {
         iterateChildren(nodep);
         AstVarScope* aliasp = LinkDotScopeVisitor::getAliasVarScopep(nodep);
         if (aliasp && aliasp != nodep) {
-            // Aliased variable might still be references from outside,
-            // eg through the VPI, and is traced, so we need the value to propagate.
-            // TODO: this means external writes to the LHS (e.g.: through the VPI) don't work
-            AstAssignW* const assignp = new AstAssignW{
+            // Aliased variable might still be referenced from outside,
+            // e.g. through the VPI, and is traced, so we need the value to
+            // propagate.  The original code only propagated *from* the canonical
+            // variable to the alias which meant external writes to the LHS
+            // (i.e. the non-canonical name) were ignored.  After implementing
+            // alias-aware varInsert the VPI will register the canonical
+            // address, so the bug is unlikely to be hit, but it doesn't hurt
+            // to make the linkage symmetric.
+            AstAssignW* const assignp1 = new AstAssignW{
                 nodep->fileline(), new AstVarRef{nodep->fileline(), nodep, VAccess::WRITE},
                 new AstVarRef{nodep->fileline(), aliasp, VAccess::READ}};
-            assignp->user2(true);
-            nodep->addNextHere(new AstAlways{assignp});
+            assignp1->user2(true);
+            nodep->addNextHere(new AstAlways{assignp1});
+
+            // also keep the reverse copy so writes to the LHS propagate
+            // back to the canonical variable (protects against any stray
+            // registrations to the old name).
+            AstAssignW* const assignp2 = new AstAssignW{
+                nodep->fileline(), new AstVarRef{nodep->fileline(), aliasp, VAccess::WRITE},
+                new AstVarRef{nodep->fileline(), nodep, VAccess::READ}};
+            assignp2->user2(true);
+            aliasp->addNextHere(new AstAlways{assignp2});
+
             // Propagate attributes of the replaced variable,
             // because all references to it are replaced with references to the alias variable
             aliasp->varp()->propagateAttrFrom(nodep->varp());

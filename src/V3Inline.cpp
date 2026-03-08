@@ -463,13 +463,18 @@ bool inlinePort(const AstVar* nodep) {
     // Note: For singls marked 'public' (and not 'public_flat') inlining
     // of their containing modules is disabled so they wont reach here.
 
-    // TODO: For now, writable public signals inside the cell cannot be
-    // eliminated as they are entered into the VerilatedScope, and
-    // changes would not propagate to it when assigned. (The alias created
-    // for them ensures they would be read correctly, but would not
-    // propagate any changes.) This can be removed when the VerialtedScope
-    // construction in V3EmitCSyms understands aliases.
-    if (nodep->isSigUserRWPublic()) return false;
+    // Previously we blocked inlining of public writable ports because the
+    // VerilatedScope registration (varInsert) always used the original
+    // variable's storage. If that variable was later eliminated during
+    // inlining, the registered pointer would be stale and writes via the
+    // VPI would be lost.  See the TODO in V3EmitCSyms for details.
+    //
+    // With alias-aware registration implemented (see V3EmitCSyms changes),
+    // we no longer need to prevent this inlining.  Allow the optimizer to
+    // eliminate public_flat_rw signals so that they behave like normal
+    // signals and don't unduly bloat the design.
+    //
+    // if (nodep->isSigUserRWPublic()) return false;
 
     // Otherwise we can repalce the variable
     return true;

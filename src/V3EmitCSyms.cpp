@@ -23,6 +23,24 @@
 #include "V3StackCount.h"
 #include "V3Stats.h"
 
+// For alias resolution we replicate the same disjoint-set logic that
+// LinkDotScopeVisitor uses internally.  This avoids exposing its internal
+// class in a header.
+#include <unordered_map>
+
+// Ad-hoc alias resolution on VarScope nodes.  The node's user2p() field
+// is used as a parent pointer; follow the chain to find the root and
+// compress paths along the way.
+static AstVarScope* resolveAliasVarScope(AstVarScope* const vscp) {
+    if (vscp->user2p() && vscp != vscp->user2p()) {
+        AstVarScope* const aliasp = resolveAliasVarScope(VN_AS(vscp->user2p(), VarScope));
+        vscp->user2p(aliasp);
+        return aliasp;
+    } else {
+        return vscp;
+    }
+}
+
 #include <algorithm>
 #include <map>
 #include <vector>
@@ -87,6 +105,11 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     using ModVarPair = std::pair<const AstNodeModule*, const AstVar*>;
 
     // STATE
+    // Map from a variable to the canonical variable it aliases to.
+    std::unordered_map<const AstVar*, const AstVar*> m_aliasMap;
+    // Map from a canonical variable to the scope that actually contains it.
+    // Used when we need to generate a correct address expression for the alias target.
+    std::unordered_map<const AstVar*, const AstScope*> m_varToScope;
     AstCFunc* m_cfuncp = nullptr;  // Current function
     AstNodeModule* m_modp = nullptr;  // Current module
     std::vector<ScopeModPair> m_scopes;  // Every scope by module
@@ -378,6 +401,24 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         if ((nodep->isSigUserRdPublic() || nodep->isSigUserRWPublic()) && !m_cfuncp) {
             m_modVars.emplace_back(m_modp, nodep);
         }
+    }
+
+    // Track alias information by visiting VarScope nodes.  Each VarScope may
+    // have a user2p() pointer pointing to its canonical alias; the helper above
+    // resolves the full chain.
+    void visit(AstVarScope* nodep) override {
+        // compute canonical varscope
+        AstVarScope* canon = resolveAliasVarScope(nodep);
+        const AstVar* myvar = nodep->varp();
+        const AstScope* myscp = nodep->scopep();
+        if (canon) {
+            const AstVar* canonVar = canon->varp();
+            m_varToScope[canonVar] = canon->scopep();
+            if (canonVar != myvar) { m_aliasMap[myvar] = canonVar; }
+        } else {
+            m_varToScope[myvar] = myscp;
+        }
+        iterateChildrenConst(nodep);
     }
     void visit(AstNodeCoverDecl* nodep) override {
         // Assign numbers to all bins, so we know how big of an array to use
@@ -768,8 +809,16 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
         add("// Setup public variables");
         for (const auto& itpair : m_scopeVars) {
             const ScopeVarData& svd = itpair.second;
-            const AstScope* const scopep = svd.m_scopep;
-            const AstVar* const varp = svd.m_varp;
+            // resolve alias: we want to register the canonical/storage variable
+            // but keep the original pretty name for the user-visible identifier.
+            const AstVar* varp = svd.m_varp;
+            const AstScope* scopep = svd.m_scopep;
+            auto aliasIt = m_aliasMap.find(varp);
+            if (aliasIt != m_aliasMap.end()) {
+                varp = aliasIt->second;
+                auto scIt = m_varToScope.find(varp);
+                if (scIt != m_varToScope.end()) { scopep = scIt->second; }
+            }
             int pdim = 0;
             int udim = 0;
             std::string bounds;
@@ -808,6 +857,9 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const std::string varName
                 = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
                   + protect(varp->name());
+            // Note: we keep the original pretty name (svd.m_varBasePretty) for the
+            // user-visible identifier, even when varp has been redirected to an
+            // alias target.  The aliasMap only affects the address expression.
 
             if (!varp->isParam()) {
                 stmt += ", &(";
