@@ -109,9 +109,7 @@ class EmitCHeader final : public EmitCConstInit {
         // Emit variables in consecutive anon and non-anon batches
         for (const AstNode* nodep = modp->stmtsp(); nodep; nodep = nodep->nextp()) {
             if (const AstVar* const varp = VN_CAST(nodep, Var)) {
-                // Alias-reduced vars with no remaining references share storage
-                // with their canonical variable, so no struct member is needed
-                if (varp->vpiAlias() && varp->noCReset()) continue;
+
                 if (varp->isIO() || varp->isSignal() || varp->isClassMember() || varp->isTemp()
                     || varp->isGenVar()) {
                     const bool anon = EmitCUtil::isAnonOk(varp);

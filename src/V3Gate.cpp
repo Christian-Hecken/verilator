@@ -532,10 +532,11 @@ class GateTrivialAliasReduction final {
 
     void analyze() {
         // Only alias-reduce when --public-flat-rw is active.  With that flag
-        // every signal is public for VPI access and users are not expected to
-        // access individual struct members from C++.  Per-signal annotations
-        // (/*verilator public_flat*/, .vlt public) imply the user intends
-        // direct C++ access, so alias-reducing those would break their code.
+        // every signal is public for VPI access; the struct members remain but
+        // VPI registration is redirected to the canonical variable's address.
+        // Per-signal annotations (/*verilator public_flat*/, .vlt public) imply
+        // the user accesses the struct member directly from C++, and the assign
+        // must stay so the member value is kept up to date.
         if (!v3Global.opt.publicFlatRW()) return;
         for (V3GraphVertex& vtx : m_graph.vertices()) {
             GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
@@ -564,6 +565,12 @@ class GateTrivialAliasReduction final {
             // it must be public (immune from elimination) or IO.
             // Non-public targets would be deleted by V3Dead, leaving dangling pointers.
             if (!driverVarp->isSigPublic() && !driverVarp->isIO()) continue;
+            // Source and target must share the same scope so the address
+            // expression in V3EmitCSyms (scope.target_name) is valid.
+            // Cross-scope aliases (e.g. interface port -> module port) cannot
+            // be redirected because the target name doesn't exist in the
+            // source's struct.
+            if (vVtxp->varScp()->scopep() != driverVscp->scopep()) continue;
             varp->vpiAlias(driverVarp);
             // Re-enable substitution; GateInline will propagate and eliminate the var
             vVtxp->setReducible("TrivialAlias");
@@ -1370,42 +1377,6 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Inline variables
         GateInline::apply(*graphp);
         if (dumpGraphLevel() >= 6) graphp->dumpDotFilePrefixed("gate_inline");
-
-        // Mark alias-reduced vars that have no remaining references for storage
-        // elimination. Collect all referenced vars in one pass, then mark unreferenced
-        // vpiAlias vars with noCReset so V3CCtors won't create reset code and
-        // V3EmitCHeaders won't emit struct storage for them.
-        // Also ensure alias targets retain storage so the VPI address redirection
-        // in V3EmitCSyms can point to valid struct members.
-        {
-            std::unordered_set<const AstVar*> referencedVars;
-            netlistp->foreach(
-                [&](const AstNodeVarRef* refp) { referencedVars.insert(refp->varp()); });
-            // Ensure alias targets are kept alive -- follow each alias chain
-            // and mark the canonical target as referenced, so it retains storage
-            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
-                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
-                     stmtp = stmtp->nextp()) {
-                    if (const AstVar* const varp = VN_CAST(stmtp, Var)) {
-                        if (varp->vpiAlias()) {
-                            const AstVar* canon = varp;
-                            while (const AstVar* const next = canon->vpiAlias()) canon = next;
-                            referencedVars.insert(canon);
-                        }
-                    }
-                }
-            }
-            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
-                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
-                     stmtp = stmtp->nextp()) {
-                    if (AstVar* const varp = VN_CAST(stmtp, Var)) {
-                        if (varp->vpiAlias() && !varp->isIO() && !referencedVars.count(varp)) {
-                            varp->noCReset(true);
-                        }
-                    }
-                }
-            }
-        }
 
         // Remove redundant logic
         if (v3Global.opt.fDedupe()) {

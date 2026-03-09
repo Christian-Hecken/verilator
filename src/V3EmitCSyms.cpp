@@ -780,10 +780,9 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const AstVar* varp = svd.m_varp;
             const AstScope* const scopep = svd.m_scopep;
             // For the address expression, redirect to the canonical variable
-            // only when the source var's storage was eliminated (noCReset).
-            // If the source var still has its own struct member, use it directly.
+            // so VPI reads return the live value from the alias target's storage.
             const AstVar* addrVarp = varp;
-            if (varp->noCReset()) {
+            {
                 const auto aliasIt = m_aliasMap.find(varp);
                 if (aliasIt != m_aliasMap.end()) addrVarp = aliasIt->second;
             }
