@@ -531,6 +531,12 @@ class GateTrivialAliasReduction final {
     size_t m_statAliasReduced = 0;
 
     void analyze() {
+        // Only alias-reduce when --public-flat-rw is active.  With that flag
+        // every signal is public for VPI access and users are not expected to
+        // access individual struct members from C++.  Per-signal annotations
+        // (/*verilator public_flat*/, .vlt public) imply the user intends
+        // direct C++ access, so alias-reducing those would break their code.
+        if (!v3Global.opt.publicFlatRW()) return;
         for (V3GraphVertex& vtx : m_graph.vertices()) {
             GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
             if (!vVtxp) continue;

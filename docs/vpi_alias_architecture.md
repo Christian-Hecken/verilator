@@ -173,6 +173,22 @@ non-existent struct member.
 canonical target and insert that target into the referenced-vars set, ensuring
 it keeps its struct storage.
 
+### Pitfall 6: Per-Signal `public_flat` Implies Direct C++ Access
+
+**Problem:** When signals are made public via inline annotations
+(`/*verilator public_flat*/`) or `.vlt` config (`public -module ... -var ...`),
+users typically access them directly from C++ as struct members
+(`rootp->mod__DOT__sig`). Alias-reducing these signals removes both their eval
+logic and struct storage, breaking that direct access. Manifested as compile
+errors in `t_export_packed_struct2` (`add__DOT__op2` missing from struct) and a
+stats mismatch in `t_inst_tree_inl0_pub1` (67 combined CFuncs instead of 85,
+because 30 signals were incorrectly alias-reduced).
+
+**Fix:** Guard `GateTrivialAliasReduction::analyze()` with
+`v3Global.opt.publicFlatRW()`. The optimization only runs when
+`--public-flat-rw` is active (all signals public for VPI). Per-signal
+annotations imply intentional C++ access and are left untouched.
+
 ---
 
 ## Testing
@@ -189,3 +205,5 @@ Key regression tests:
 | `t_dpi_var`                  | No dangling pointers (non-public targets)       |
 | `t_inst_tree_inl1_pub1`      | No dangling pointers (inlined instances)        |
 | `t_vpi_public_depthn_2`      | Cross-scope aliases use correct address         |
+| `t_export_packed_struct2`    | Per-signal `public_flat` retains struct storage |
+| `t_inst_tree_inl0_pub1`      | `.vlt` public signals not alias-reduced         |
