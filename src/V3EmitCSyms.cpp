@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <vector>
 
 VL_DEFINE_DEBUG_FUNCTIONS;
@@ -595,6 +596,22 @@ void EmitCSyms::emitSymImpPreamble() {
         needsNewLine = true;
     }
     if (needsNewLine) puts("\n");
+
+    // Forward declarations for ghost eval callback functions
+    {
+        std::set<std::string> ghostDeclared;
+        for (const auto& itpair : m_scopeVars) {
+            const ScopeVarData& svd = itpair.second;
+            const AstVar* const varp = svd.m_varp;
+            if (!varp->isGhost()) continue;
+            const AstScope* const scopep = svd.m_scopep;
+            const std::string modClassName = EmitCUtil::prefixNameProtect(scopep->modp());
+            const std::string ghostFuncName = modClassName + "___ghostEval";
+            if (ghostDeclared.insert(ghostFuncName).second) {
+                puts("void " + ghostFuncName + "(void* voidSelf);\n");
+            }
+        }
+    }
 }
 
 void EmitCSyms::emitScopeHier(std::vector<std::string>& stmts, bool destroy) {
@@ -838,12 +855,17 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
 
             // For ghost variables, register ghost read callback
             if (varp->isGhost()) {
-                // Ghost read callback: currently a no-op since the value is
-                // still computed in eval. Future work will remove the eval-loop
-                // assignment and make this callback the primary computation path.
-                // The callback registration is emitted so the infrastructure
-                // is in place and can be wired up when the eval-loop assignment
-                // is removed.
+                const std::string scopeRef
+                    = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect());
+                const std::string modClassName = EmitCUtil::prefixNameProtect(scopep->modp());
+                const std::string ghostFuncName = modClassName + "___ghostEval";
+                std::string gs;
+                gs += protect("__Vscopep_" + svd.m_scopeName) + "->varGhostCbs(\"";
+                gs += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty));
+                gs += "\", &" + ghostFuncName;
+                gs += ", static_cast<void*>(&(" + scopeRef + "))";
+                gs += ");";
+                add(gs);
             }
         }
     }

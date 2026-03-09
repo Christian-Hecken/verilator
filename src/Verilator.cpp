@@ -58,6 +58,7 @@
 #include "V3FuncOpt.h"
 #include "V3Gate.h"
 #include "V3Ghost.h"
+#include "V3GhostFunc.h"
 #include "V3Global.h"
 #include "V3Graph.h"
 #include "V3HierBlock.h"
@@ -433,6 +434,10 @@ static void process() {
                 v3info("Command Line disabled gate optimization with -fno-gate.  "
                        "This may cause ordering problems.");
             }
+
+            // Create ghost eval callback functions — moves ghost assignments
+            // out of the eval loop into lazy-eval CFuncs (must be after V3Gate)
+            V3GhostFunc::ghostFuncAll(v3Global.rootp());
 
             // Combine COVERINCs with duplicate terms
             if (v3Global.opt.coverage()) V3CoverageJoin::coverageJoin(v3Global.rootp());

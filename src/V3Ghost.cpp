@@ -119,6 +119,17 @@ class GhostVisitor final : public VNVisitorConst {
         iterateChildrenConst(nodep);
     }
 
+    void visit(AstAssignDly* nodep) override {
+        // Non-blocking assignment — always clocked (disqualifies from ghosting)
+        if (AstVarRef* const lhsVarRefp = VN_CAST(nodep->lhsp(), VarRef)) {
+            if (lhsVarRefp->access().isWriteOrRW()) {
+                AstVarScope* const vscp = lhsVarRefp->varScopep();
+                vscp->user2(vscp->user2() + 1);
+            }
+        }
+        iterateChildrenConst(nodep);
+    }
+
     void visit(AstNodeVarRef* nodep) override {
         // Only interested in write refs under assignments, handled above
     }
@@ -144,8 +155,11 @@ class GhostVisitor final : public VNVisitorConst {
                          << " forced=" << varp->isForced() << " param=" << varp->isParam()
                          << " comboW=" << vscp->user1() << " clockW=" << vscp->user2() << endl);
 
-            // Skip primary I/O — these are the user's interface
+            // Skip I/O ports — submodule ports retain VVarType::PORT after inlining
+            // even though their direction is cleared. DPI context code accesses these
+            // via raw data pointers that bypass ghost callbacks.
             if (varp->isPrimaryIO()) return;
+            if (varp->varType() == VVarType::PORT) return;
 
             // Skip forced or DPI-written signals
             if (varp->isForced()) return;

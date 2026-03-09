@@ -45,10 +45,13 @@ A signal is ghost-eligible if **all** of the following hold:
    `always @*` assignment
 3. **No clocked drivers**: not written in any `always_ff` or clocked block
 4. **Not a primary I/O**: not a top-level port
-5. **Not forced or forceable**: not subject to `force`/`release`
-6. **Not DPI-written**: not modified via DPI calls
-7. **Not a parameter**: not a `parameter` or `localparam`
-8. **All inputs survive**: every signal read by the driving expression is itself
+5. **Not a port**: `varType() != VVarType::PORT` — submodule ports retain
+   PORT type after inlining even though direction is cleared, and DPI context
+   code can access them via raw data pointers that bypass ghost callbacks
+6. **Not forced or forceable**: not subject to `force`/`release`
+7. **Not DPI-written**: not modified via DPI calls
+8. **Not a parameter**: not a `parameter` or `localparam`
+9. **All inputs survive**: every signal read by the driving expression is itself
    a non-ghost signal (no transitive ghost chains in the current implementation)
 
 ## Architecture
@@ -80,25 +83,60 @@ Two changes enable ghost optimization:
    For ghosts, the deletion is skipped — the assignment `c = ~a` is preserved
    so the backing storage stays correct for external reads.
 
+### Lazy-Eval Function Creation: V3GhostFunc (`src/V3GhostFunc.cpp`)
+
+Runs after V3Gate in the pipeline. This pass moves un-pinned ghost
+assignments out of the eval loop into a `_ghostEval` CFunc that is
+registered as a VPI read callback.
+
+1. **collectGhostAssigns**: Walks Active blocks for `AstAssignW` nodes
+   whose LHS variable has `isGhost()` set.
+2. **analyzeReaders**: Determines which ghost variables are read by
+   non-ghost eval-loop code ("eval-loop readers") vs. only by other
+   ghost assignments ("ghost-to-ghost" references).
+3. **computePinned**: Iterative pinning — ghost variables with eval-loop
+   readers are pinned. If a pinned ghost reads from another ghost, that
+   dependency is also pinned transitively.
+4. **clearGhost on pinned vars**: Pinned variables have their ghost flag
+   cleared so V3EmitCSyms won't register callbacks for them. Their
+   assignments stay in the eval loop.
+5. **topoSort**: Un-pinned ghosts are topologically sorted so that
+   dependencies are computed before dependents in the callback.
+6. **createGhostFuncs**: Creates one `_ghostEval(void* voidSelf)` CFunc
+   per scope, moves un-pinned ghost assignments into it, and removes
+   them from the Active blocks.
+
+### Symbol Callback Registration: V3EmitCSyms (`src/V3EmitCSyms.cpp`)
+
+Emits code in the `__Vsymtab` constructor to register `_ghostEval` as
+the ghost read callback for each un-pinned ghost variable:
+
+```cpp
+__Vscopep->varGhostCbs("varname", &ModClass___ghostEval, static_cast<void*>(&(TOP)));
+```
+
+Also emits a forward declaration for the `_ghostEval` function.
+
 ### Runtime: VerilatedVar (`include/verilated_sym_props.h`)
 
-`VerilatedVar` gains a `VlGhostReadCb` function pointer field. When non-null,
-`ghostRead()` calls this callback to lazily recompute the variable's value
-before it is read. This is the hook for future work where the eval-loop
-assignment could be removed entirely, with the callback taking over as the
-sole computation path.
+`VerilatedVar` has `VlGhostReadCb` and `m_ghostReadCtx` fields. When
+`ghostRead()` is called, it invokes the callback with the context pointer
+(the module instance), which lazily recomputes all ghost variables for
+that scope.
 
 The VPI layer (`include/verilated_vpi.cpp`) calls `varp->ghostRead()` in
 `vl_vpi_get_value()` before reading the variable's data, ensuring ghost
 variables return fresh values.
 
-`VerilatedScope::varGhostCb()` (`include/verilated.h`, `include/verilated.cpp`)
-provides the API for registering ghost read callbacks on a per-variable basis.
+`VerilatedScope::varGhostCbs()` (`include/verilated.h`, `include/verilated.cpp`)
+provides the API for registering ghost read callbacks on a per-variable basis,
+taking a callback function pointer and a context pointer.
 
 ### AST Flag: `m_isGhost` (`src/V3AstNodeOther.h`)
 
-A single bit flag on `AstVar` with `isGhost()` / `setGhost()` accessors.
-Checked by V3Gate and V3EmitCSyms.
+A single bit flag on `AstVar` with `isGhost()` / `setGhost()` / `clearGhost()`
+accessors. Set by V3Ghost, checked by V3Gate and V3EmitCSyms. Cleared by
+V3GhostFunc for pinned variables that must remain in the eval loop.
 
 ## Design Decisions
 
@@ -110,14 +148,18 @@ downstream consumers — significantly more complex. `public_flat_rd` signals
 are read-only from the external perspective, making them safe to optimize
 with expression inlining alone.
 
-### Why keep the assignment in eval()?
+### Lazy eval vs. eval-loop assignment
 
-The current implementation preserves the ghost variable's assignment in the
-eval loop (`c = ~a` still runs every cycle). This is the conservative approach
-— it guarantees correctness for direct C++ member access without requiring
-any callback infrastructure. The runtime callback hooks exist as scaffolding
-for a future optimization that would remove the eval-loop assignment entirely
-and compute the value only on demand.
+V3GhostFunc performs pinning analysis to determine which ghost assignments
+can safely be removed from the eval loop. Un-pinned ghosts (those with no
+eval-loop readers after V3Gate inlining) have their assignments moved to a
+lazy-eval CFunc that only runs when the variable is read via VPI. Pinned
+ghosts (those still read by eval-loop code) remain in the eval loop with
+their ghost flag cleared.
+
+Direct C++ member access to a ghost variable does NOT trigger the callback
+— it reads whatever stale value is in the backing storage. Only VPI access
+calls `ghostRead()` to refresh the value.
 
 ### Why no transitive ghosts?
 
@@ -134,7 +176,9 @@ implementation requires all inputs to be non-ghost, avoiding this complexity.
 | `src/V3Ghost.cpp` | New — ghost eligibility analysis pass |
 | `src/V3AstNodeOther.h` | `m_isGhost` bit flag on `AstVar` |
 | `src/V3Gate.cpp` | Ghost-aware reducibility and assignment preservation |
-| `src/V3EmitCSyms.cpp` | Placeholder for ghost callback registration |
+| `src/V3GhostFunc.h` | New — declares `V3GhostFunc::ghostFuncAll()` |
+| `src/V3GhostFunc.cpp` | New — lazy-eval CFunc creation, pinning analysis |
+| `src/V3EmitCSyms.cpp` | Ghost callback registration and forward declarations |
 | `src/V3Dead.cpp` | Comment clarifying ghosts aren't eliminated |
 | `src/V3Localize.cpp` | Comment cleanup |
 | `src/Verilator.cpp` | Pipeline integration — calls `V3Ghost::ghostAll()` |
@@ -150,14 +194,18 @@ implementation requires all inputs to be non-ghost, avoiding this complexity.
 
 ## Known Limitations and Future Work
 
-- **Eval-loop assignment not yet removed**: The ghost variable is still computed
-  every cycle. The full optimization (lazy eval only on read) requires emitting
-  the ghost read callback in V3EmitCSyms, which is scaffolded but not yet wired.
 - **No transitive ghost chains**: A ghost's inputs must all be non-ghost.
+  Allowing ghost-to-ghost chains would require topological callback ordering.
 - **No `public_flat_rw` support**: Write-path optimization is not implemented.
 - **No wide signal support**: The callback infrastructure supports scalar types;
   `VlWide<N>` signals are not yet handled.
-- **Single-scope only**: Cross-scope ghost dependencies are not analyzed.
+- **Direct C++ member access reads stale values**: Only VPI access triggers
+  the ghost callback. Direct `model->rootp->varname` access reads whatever
+  was last stored, which may be stale for un-pinned ghosts.
+- **Chain-pattern performance**: When ghost variables form a linear dependency
+  chain, V3Gate inlines expressions transitively, causing the pinning analysis
+  to pin alternating stages. The optimization is most effective for
+  independently-computed ghost variables.
 
 ## Pitfalls and Difficulties
 
@@ -234,17 +282,25 @@ Multiple optimization passes needed investigation:
 Only V3Gate required ghost-specific changes. The other passes' existing
 protections for public signals also protect ghost variables.
 
-### Transitive ghost dependencies
+### Transitive ghost dependencies and pinning
 
 If signal `c = f(d)` and signal `d = g(a)` are both ghost-eligible, making
-both ghosts creates a dependency chain. When `c`'s lazy-eval callback fires,
-it needs `d`'s current value, but `d` is also a ghost whose assignment might
-have been removed. This requires either:
-1. Topological ordering of ghost callbacks, or
-2. Each ghost callback triggering its input ghosts recursively
+both ghosts creates a dependency chain. V3GhostFunc handles this via the
+pinning analysis: if `c` is read by eval-loop code, both `c` AND `d` are
+pinned (their assignments stay in the eval loop). Only ghosts with NO
+eval-loop readers (after V3Gate inlining) are moved to the lazy-eval callback.
 
-Both approaches add complexity and risk of cycles. The current implementation
-avoids this entirely by requiring all inputs to be non-ghost (`allInputsSurvive`
-check). This limits the number of eligible signals but guarantees correctness.
-A future improvement could process signals in topological order and allow
-chains, using the dependency graph to sequence callback registration.
+The `allInputsSurvive` check in V3Ghost prevents a ghost from depending on
+another ghost at eligibility time. However, V3Gate's inlining may later
+create ghost-to-ghost references when it substitutes expressions. The
+V3GhostFunc pinning analysis handles these correctly by tracking which ghosts
+read from other ghosts and pinning transitively.
+
+### Submodule port exclusion
+
+After V3Inline, submodule ports retain their `VVarType::PORT` type but lose
+their `VDirection` — `isIO()` returns false. DPI context code accesses these
+variables via `svGetScope()` + `varFind()` + raw `datap()` pointers, bypassing
+the VPI ghost callback path. If such a port were ghosted and its assignment
+moved to the lazy-eval callback, DPI reads would see stale values. The fix
+is to exclude `VVarType::PORT` variables from ghost eligibility.

@@ -2179,6 +2179,7 @@ public:
     void setStdRandomizeArg() { m_isStdRandomizeArg = true; }
     bool isGhost() const { return m_isGhost; }
     void setGhost() { m_isGhost = true; }
+    void clearGhost() { m_isGhost = false; }
     // METHODS
     void name(const string& name) override { m_name = name; }
     void tag(const string& text) override { m_tag = text; }

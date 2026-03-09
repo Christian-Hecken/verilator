@@ -261,6 +261,7 @@ class VerilatedVar VL_NOT_FINAL : public VerilatedVarProps {
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
     VlGhostReadCb m_ghostReadCb = nullptr;  // If non-null, called before reads (ghost var)
+    void* m_ghostReadCtx = nullptr;  // Context pointer for ghost callback (module instance)
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
@@ -281,9 +282,10 @@ public:
     // Ghost variable support
     bool isGhost() const { return m_ghostReadCb != nullptr; }
     void ghostReadCb(VlGhostReadCb cb) { m_ghostReadCb = cb; }
+    void ghostReadCtx(void* ctx) { m_ghostReadCtx = ctx; }
     /// Call before reading ghost variable data to refresh its value
     void ghostRead() const {
-        if (m_ghostReadCb) m_ghostReadCb(m_datap);
+        if (m_ghostReadCb) m_ghostReadCb(m_ghostReadCtx);
     }
 };
 
