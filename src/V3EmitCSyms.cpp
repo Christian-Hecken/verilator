@@ -780,9 +780,13 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const AstVar* varp = svd.m_varp;
             const AstScope* const scopep = svd.m_scopep;
             // For the address expression, redirect to the canonical variable
+            // only when the source var's storage was eliminated (noCReset).
+            // If the source var still has its own struct member, use it directly.
             const AstVar* addrVarp = varp;
-            const auto aliasIt = m_aliasMap.find(varp);
-            if (aliasIt != m_aliasMap.end()) addrVarp = aliasIt->second;
+            if (varp->noCReset()) {
+                const auto aliasIt = m_aliasMap.find(varp);
+                if (aliasIt != m_aliasMap.end()) addrVarp = aliasIt->second;
+            }
             int pdim = 0;
             int udim = 0;
             std::string bounds;

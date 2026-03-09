@@ -553,7 +553,12 @@ class GateTrivialAliasReduction final {
             if (!VN_IS(okVisitor.substitutionp(), VarRef)) continue;  // pure VarRef RHS
             // This is a trivial alias: assign A = B
             AstVarScope* const driverVscp = okVisitor.readVscps().front();
-            varp->vpiAlias(driverVscp->varp());
+            AstVar* const driverVarp = driverVscp->varp();
+            // Only redirect when the driver variable will survive V3Dead:
+            // it must be public (immune from elimination) or IO.
+            // Non-public targets would be deleted by V3Dead, leaving dangling pointers.
+            if (!driverVarp->isSigPublic() && !driverVarp->isIO()) continue;
+            varp->vpiAlias(driverVarp);
             // Re-enable substitution; GateInline will propagate and eliminate the var
             vVtxp->setReducible("TrivialAlias");
             ++m_statAliasReduced;
@@ -1359,6 +1364,42 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Inline variables
         GateInline::apply(*graphp);
         if (dumpGraphLevel() >= 6) graphp->dumpDotFilePrefixed("gate_inline");
+
+        // Mark alias-reduced vars that have no remaining references for storage
+        // elimination. Collect all referenced vars in one pass, then mark unreferenced
+        // vpiAlias vars with noCReset so V3CCtors won't create reset code and
+        // V3EmitCHeaders won't emit struct storage for them.
+        // Also ensure alias targets retain storage so the VPI address redirection
+        // in V3EmitCSyms can point to valid struct members.
+        {
+            std::unordered_set<const AstVar*> referencedVars;
+            netlistp->foreach(
+                [&](const AstNodeVarRef* refp) { referencedVars.insert(refp->varp()); });
+            // Ensure alias targets are kept alive — follow each alias chain
+            // and mark the canonical target as referenced, so it retains storage
+            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
+                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
+                     stmtp = stmtp->nextp()) {
+                    if (const AstVar* const varp = VN_CAST(stmtp, Var)) {
+                        if (varp->vpiAlias()) {
+                            const AstVar* canon = varp;
+                            while (const AstVar* const next = canon->vpiAlias()) canon = next;
+                            referencedVars.insert(canon);
+                        }
+                    }
+                }
+            }
+            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
+                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
+                     stmtp = stmtp->nextp()) {
+                    if (AstVar* const varp = VN_CAST(stmtp, Var)) {
+                        if (varp->vpiAlias() && !varp->isIO() && !referencedVars.count(varp)) {
+                            varp->noCReset(true);
+                        }
+                    }
+                }
+            }
+        }
 
         // Remove redundant logic
         if (v3Global.opt.fDedupe()) {
