@@ -158,3 +158,93 @@ implementation requires all inputs to be non-ghost, avoiding this complexity.
 - **No wide signal support**: The callback infrastructure supports scalar types;
   `VlWide<N>` signals are not yet handled.
 - **Single-scope only**: Cross-scope ghost dependencies are not analyzed.
+
+## Pitfalls and Difficulties
+
+This section documents problems encountered during implementation and their
+resolutions, as a reference for future work.
+
+### VPI and DPI write-back (resolved by scoping to `public_flat_rd`)
+
+The original design targeted `public_flat_rw` signals. This required a write
+callback so that VPI `vpi_put_value()` and DPI writes could propagate changes
+back to downstream logic. Implementing this correctly required:
+
+- A `VlGhostVar<T>` proxy template with `operator=` triggering write callbacks
+- Write callback code generation in V3EmitCSyms
+- Correct interaction with `evalNeeded` / re-evaluation triggers
+
+The write path proved too complex for an initial implementation. Signals that
+can be externally written (`public_flat_rw`, DPI-writable, forceable) interact
+with scheduling, force/release semantics, and the DFG optimizer in ways that
+are difficult to get right without extensive testing. Scoping to read-only
+signals eliminated the entire write-path problem.
+
+### Force/release implementation signals
+
+Verilator's V3Force pass generates internal signals like `__VforceEn` and
+`__VforceVal` that are marked `sigUserRWPublic(true)` for VPI access but are
+NOT themselves marked `isForceable()`. An early eligibility check that only
+excluded `isForceable()` signals missed these, causing them to be incorrectly
+ghosted. The fix was to exclude all `isSigUserRWPublic()` signals (which is
+now implicit since we require `!isSigUserRWPublic()`).
+
+### VerilatedVar ABI sensitivity
+
+Adding fields to `VerilatedVar` changes the struct's size and layout. Early
+iterations added two pointer fields (`m_ghostReadCb`, `m_ghostWriteCb`) between
+existing members, which broke `VerilatedVarNameMap` (a `std::map<string,
+VerilatedVar>`) — the map's value type changed size, causing DPI `varFind()`
+lookups to return garbage. The current implementation adds only one pointer
+field (`m_ghostReadCb`), which is sufficient for read-only ghosts. Any future
+additions must be careful about ABI compatibility with existing compiled
+testbenches.
+
+### V3Gate interaction: consumed vs. reducible
+
+V3Gate uses two properties to decide what to do with a signal:
+- **reducible**: can the signal's expression be inlined into consumers?
+- **consumed**: is the signal used by something that prevents removal?
+
+Normal public signals are `consumed=true, reducible=false` — they can't be
+inlined and can't be removed. Ghost signals need `consumed=true,
+reducible=true` — they CAN be inlined but should NOT be removed (because the
+assignment must persist for VPI reads). Getting this combination wrong in
+either direction causes either missed optimization (if not reducible) or
+incorrect removal (if not consumed).
+
+Additionally, when V3Gate has inlined a ghost's expression into all consumers
+and the ghost's output edge list is empty, V3Gate normally deletes the signal
+and its driver. Ghost signals must skip this deletion to preserve their
+eval-loop assignment.
+
+### Optimization pass interactions
+
+Multiple optimization passes needed investigation:
+- **V3DfgOptimizer**: Safe — ghost vars keep their assignment via `sigPublic`
+  protection in V3Dead, so DFG optimization of consumers is fine.
+- **V3Life**: Safe — doesn't affect ghost variables since they have public
+  visibility.
+- **V3Localize**: Safe — `isSigPublic()` check already prevents localization.
+- **V3SplitVar**: Safe — doesn't split public signals.
+- **V3Inline**: Safe — module inlining preserves variable properties.
+- **V3Sched**: Safe — ghost variables are still computed in the ICO/combo
+  eval loop since their assignments are preserved.
+
+Only V3Gate required ghost-specific changes. The other passes' existing
+protections for public signals also protect ghost variables.
+
+### Transitive ghost dependencies
+
+If signal `c = f(d)` and signal `d = g(a)` are both ghost-eligible, making
+both ghosts creates a dependency chain. When `c`'s lazy-eval callback fires,
+it needs `d`'s current value, but `d` is also a ghost whose assignment might
+have been removed. This requires either:
+1. Topological ordering of ghost callbacks, or
+2. Each ghost callback triggering its input ghosts recursively
+
+Both approaches add complexity and risk of cycles. The current implementation
+avoids this entirely by requiring all inputs to be non-ghost (`allInputsSurvive`
+check). This limits the number of eligible signals but guarantees correctness.
+A future improvement could process signals in topological order and allow
+chains, using the dependency graph to sequence callback registration.
