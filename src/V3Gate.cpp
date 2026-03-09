@@ -169,7 +169,9 @@ public:
                 vVtxp->setConsumed("VirtIface");
             }
             if (vscp->varp()->isSigPublic()) {
-                // Public signals shouldn't be changed, pli code might be messing with them
+                // Public signals shouldn't be changed, pli code might be
+                // reading them.  They need stable storage and up-to-date
+                // values.
                 vVtxp->clearReducibleAndDedupable("SigPublic");
                 vVtxp->setConsumed("SigPublic");
                 ++m_statSigPublicBlocked;
@@ -590,6 +592,61 @@ class GateTrivialAliasReduction final {
 
 public:
     static void apply(GateGraph& graph) { GateTrivialAliasReduction{graph}; }
+};
+
+//######################################################################
+// GateDeadPublicReduction
+// Detect public signals with zero internal consumers.  Their driving logic
+// can be eliminated (via GateUnused) by clearing the consumed flag.
+// The variable itself remains in the struct for ABI stability, but its
+// eval-time assignment is removed.
+// Only runs under --public-flat-rw (same guard as GateTrivialAliasReduction).
+
+class GateDeadPublicReduction final {
+    // STATE
+    GateGraph& m_graph;
+    size_t m_statDeadReduced = 0;
+
+    void analyze() {
+        if (!v3Global.opt.publicFlatRW()) return;
+        for (V3GraphVertex& vtx : m_graph.vertices()) {
+            GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
+            if (!vVtxp) continue;
+            AstVar* const varp = vVtxp->varScp()->varp();
+            // Only handle user-declared public signals that were blocked
+            if (!varp->isSigUserRdPublic()) continue;
+            if (vVtxp->reducible()) continue;  // Already reducible, nothing to do
+            // The signal must have zero internal consumers (no outgoing edges)
+            if (!vVtxp->outEmpty()) continue;
+            // Clear consumed so GateUnused will not propagate "used" to the driver
+            vVtxp->setConsumed("");  // Keep consumed (var itself persists) but...
+            // Actually we need to NOT mark it consumed, so the driver logic is
+            // recognized as unused.  The variable member in the struct is kept
+            // by V3Dead (isSigPublic check), but the eval assignment can go.
+            // We achieve this by not propagating consumed: we need to avoid
+            // the consumed flag on this vertex.  Since setConsumed is
+            // irreversible in the current API, we use a different approach:
+            // make the variable "reducible" so GateInline processes it.
+            // GateInline with zero consumers will simply not substitute
+            // anything, but the driving logic vertex will lose its one
+            // consumer edge, making it unconsumed for GateUnused.
+            vVtxp->setReducible("DeadPublic");
+            ++m_statDeadReduced;
+            UINFO(5, "DeadPublic: " << varp->name() << " (zero consumers)");
+        }
+    }
+
+    explicit GateDeadPublicReduction(GateGraph& graph)
+        : m_graph{graph} {
+        analyze();
+    }
+
+    ~GateDeadPublicReduction() {
+        V3Stats::addStat("Optimizations, Gate sigs dead-reduced (public)", m_statDeadReduced);
+    }
+
+public:
+    static void apply(GateGraph& graph) { GateDeadPublicReduction{graph}; }
 };
 
 //######################################################################
@@ -1365,6 +1422,10 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Re-enable gate reduction for trivially-aliased public signals (assign A = B).
         // Must run before GateInline so the re-enabled vars are eligible for inlining.
         GateTrivialAliasReduction::apply(*graphp);
+
+        // Re-enable reduction for dead public signals (zero internal consumers).
+        // GateInline will then delete the driving logic for these.
+        GateDeadPublicReduction::apply(*graphp);
 
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);

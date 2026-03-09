@@ -127,8 +127,10 @@ public:
     // METHODS
     void checkRemoveAssign(const AstVarScope* vscp, LifeVarEntry& entr) {
         const AstVar* const varp = vscp->varp();
-        // We don't optimize any public sigs
-        if (varp->isSigPublic()) return;
+        // Don't optimize read-write public sigs (external code may write them).
+        // Read-only public sigs are safe to optimize since they are never
+        // externally written.
+        if (varp->isSigUserRWPublic()) return;
         if (varp->sensIfacep()) return;
         // Check the var entry, and remove if appropriate
         AstNodeStmt* const oldassp = entr.assignp();
@@ -171,7 +173,7 @@ public:
             entr.init(false);
         } else {
             if (AstConst* const constp = entr.constNodep()) {
-                if (!varrefp->varp()->isSigPublic() && !varrefp->varp()->isWrittenByDpi()
+                if (!varrefp->varp()->isSigUserRWPublic() && !varrefp->varp()->isWrittenByDpi()
                     && !varrefp->varp()->isVirtIface()) {
                     // Aha, variable is constant; substitute in.
                     // We'll later constant propagate
