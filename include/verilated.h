@@ -110,6 +110,9 @@ class VerilatedVcd;
 class VerilatedVcdC;
 class VerilatedVcdSc;
 
+// Ghost variable callback (see verilated_sym_props.h)
+using VlGhostReadCb = void (*)(void*);
+
 //=========================================================================
 // Basic types
 
@@ -732,6 +735,7 @@ public:  // But internals only - called from verilated modules, VerilatedSyms
     void exportInsert(int finalize, const char* namep, void* cb) VL_MT_UNSAFE;
     void varInsert(const char* namep, void* datap, bool isParam, VerilatedVarType vltype,
                    int vlflags, int udims, int pdims, ...) VL_MT_UNSAFE;
+    void varGhostCb(const char* namep, VlGhostReadCb readCb) VL_MT_UNSAFE;
     // ACCESSORS
     const char* name() const VL_MT_SAFE_POSTINIT { return m_namep; }
     const char* identifier() const VL_MT_SAFE_POSTINIT { return m_identifierp; }

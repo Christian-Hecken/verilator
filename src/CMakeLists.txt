@@ -277,6 +277,7 @@ set(COMMON_SOURCES
     V3Fork.cpp
     V3FuncOpt.cpp
     V3Gate.cpp
+    V3Ghost.cpp
     V3Global.cpp
     V3Graph.cpp
     V3GraphAcyc.cpp

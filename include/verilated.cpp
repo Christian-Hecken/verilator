@@ -3619,6 +3619,11 @@ void VerilatedScope::varInsert(const char* namep, void* datap, bool isParam,
     m_varsp->emplace(namep, var);
 }
 
+void VerilatedScope::varGhostCb(const char* namep, VlGhostReadCb readCb) VL_MT_UNSAFE {
+    VerilatedVar* const varp = varFind(namep);
+    if (VL_LIKELY(varp)) { varp->ghostReadCb(readCb); }
+}
+
 // cppcheck-suppress unusedFunction  // Used by applications
 VerilatedVar* VerilatedScope::varFind(const char* namep) const VL_MT_SAFE_POSTINIT {
     if (VL_LIKELY(m_varsp)) {

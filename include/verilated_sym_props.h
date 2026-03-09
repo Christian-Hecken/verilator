@@ -251,10 +251,16 @@ public:
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
-class VerilatedVar final : public VerilatedVarProps {
+// Ghost variable callback
+// A ghost read callback lazily recomputes the variable's value from surviving signals.
+// The void* argument is the data pointer (m_datap) of this variable.
+using VlGhostReadCb = void (*)(void*);
+
+class VerilatedVar VL_NOT_FINAL : public VerilatedVarProps {
     // MEMBERS
     void* const m_datap;  // Location of data
     const char* const m_namep;  // Name - slowpath
+    VlGhostReadCb m_ghostReadCb = nullptr;  // If non-null, called before reads (ghost var)
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
@@ -272,6 +278,13 @@ public:
     void* datap() const { return m_datap; }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
+    // Ghost variable support
+    bool isGhost() const { return m_ghostReadCb != nullptr; }
+    void ghostReadCb(VlGhostReadCb cb) { m_ghostReadCb = cb; }
+    /// Call before reading ghost variable data to refresh its value
+    void ghostRead() const {
+        if (m_ghostReadCb) m_ghostReadCb(m_datap);
+    }
 };
 
 #endif  // Guard

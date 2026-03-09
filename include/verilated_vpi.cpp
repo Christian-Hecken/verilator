@@ -2709,6 +2709,10 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
 
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
+
+    // Ghost variable support: refresh value before reading
+    varp->ghostRead();
+
     void* const varDatap = vop->varDatap();
 
     if (!vl_check_format(vop, valuep, true)) return;

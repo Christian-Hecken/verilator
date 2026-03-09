@@ -162,9 +162,17 @@ public:
                 vVtxp->setConsumed("VirtIface");
             }
             if (vscp->varp()->isSigPublic()) {
-                // Public signals shouldn't be changed, pli code might be messing with them
-                vVtxp->clearReducibleAndDedupable("SigPublic");
-                vVtxp->setConsumed("SigPublic");
+                if (vscp->varp()->isGhost()) {
+                    // Ghost variables: mark as consumed to prevent removal, but
+                    // leave reducible=true so the expression can be inlined into
+                    // consumers. The ghost var's own assignment persists.
+                    vVtxp->setConsumed("GhostPublic");
+                } else {
+                    // Public signals shouldn't be changed, pli code might be messing
+                    // with them
+                    vVtxp->clearReducibleAndDedupable("SigPublic");
+                    vVtxp->setConsumed("SigPublic");
+                }
             }
             if (vscp->varp()->isIO() && vscp->scopep()->isTop()) {
                 // We may need to convert to/from sysc/reg sigs
@@ -758,11 +766,16 @@ class GateInline final {
 
             // If removed all usage
             if (vVtxp->outEmpty()) {
-                // Remove Variable vertex
-                VL_DO_DANGLING(vVtxp->unlinkDelete(&m_graph), vVtxp);
-                // Remove driving logic and vertex
-                VL_DO_DANGLING(logicp->unlinkFrBack()->deleteTree(), logicp);
-                VL_DO_DANGLING(lVtxp->unlinkDelete(&m_graph), lVtxp);
+                if (vscp->varp()->isGhost()) {
+                    // Ghost var: all consumers now have the expression inlined,
+                    // but keep the assignment so VPI reads still return correct values.
+                } else {
+                    // Remove Variable vertex
+                    VL_DO_DANGLING(vVtxp->unlinkDelete(&m_graph), vVtxp);
+                    // Remove driving logic and vertex
+                    VL_DO_DANGLING(logicp->unlinkFrBack()->deleteTree(), logicp);
+                    VL_DO_DANGLING(lVtxp->unlinkDelete(&m_graph), lVtxp);
+                }
             }
         }
     }

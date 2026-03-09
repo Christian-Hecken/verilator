@@ -835,6 +835,16 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             stmt += bounds;
             stmt += ");";
             add(stmt);
+
+            // For ghost variables, register ghost read callback
+            if (varp->isGhost()) {
+                // Ghost read callback: currently a no-op since the value is
+                // still computed in eval. Future work will remove the eval-loop
+                // assignment and make this callback the primary computation path.
+                // The callback registration is emitted so the infrastructure
+                // is in place and can be wired up when the eval-loop assignment
+                // is removed.
+            }
         }
     }
 

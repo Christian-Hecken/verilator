@@ -57,6 +57,7 @@
 #include "V3Fork.h"
 #include "V3FuncOpt.h"
 #include "V3Gate.h"
+#include "V3Ghost.h"
 #include "V3Global.h"
 #include "V3Graph.h"
 #include "V3HierBlock.h"
@@ -412,6 +413,11 @@ static void process() {
             // After V3TraceDecl so we don't trace additional signals inserted to implement
             // forcing.
             V3Force::forceAll(v3Global.rootp());
+
+            // Ghost variable analysis: mark public signals that can be optimized away
+            // and lazily reconstructed on external access.
+            // Must run before V3DfgOptimizer and V3Gate so they can treat ghosts differently.
+            V3Ghost::ghostAll(v3Global.rootp());
 
             if (v3Global.opt.fDfgScoped()) {
                 // Scoped DFG optimization
