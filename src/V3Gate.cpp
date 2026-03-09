@@ -537,7 +537,7 @@ class GateTrivialAliasReduction final {
             AstVar* const varp = vVtxp->varScp()->varp();
             // Only handle user-declared public signals (public_flat_rw/rd) that
             // were blocked from reduction.  Do NOT touch structurally-public signals
-            // (e.g. hierarchical block ports) — those are functionally needed.
+            // (e.g. hierarchical block ports) -- those are functionally needed.
             if (!varp->isSigUserRdPublic()) continue;
             if (vVtxp->reducible()) continue;  // was not blocked
             // Must have exactly one driver
@@ -1375,7 +1375,7 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
             std::unordered_set<const AstVar*> referencedVars;
             netlistp->foreach(
                 [&](const AstNodeVarRef* refp) { referencedVars.insert(refp->varp()); });
-            // Ensure alias targets are kept alive — follow each alias chain
+            // Ensure alias targets are kept alive -- follow each alias chain
             // and mark the canonical target as referenced, so it retains storage
             for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
                 for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;

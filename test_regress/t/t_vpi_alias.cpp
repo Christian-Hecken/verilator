@@ -1,7 +1,13 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
-// Simple VPI alias test: inner module contains public_flat_rw signal that
-// is a trivial wire-through.  Verify VPI read returns the correct value
-// from the canonical storage after aliasing.
+//*************************************************************************
+//
+// This program is free software; you can redistribute it and/or modify it
+// under the terms of either the GNU Lesser General Public License Version 3
+// or the Perl Artistic License Version 2.0.
+// SPDX-FileCopyrightText: 2026 Wilson Snyder
+// SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
+//
+//*************************************************************************
 
 #include "verilated.h"
 #include "verilated_vpi.h"
