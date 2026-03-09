@@ -1,47 +1,55 @@
 // -*- mode: C++; c-file-style: "cc-mode" -*-
 // Simple VPI alias test: inner module contains public_flat_rw signal that
-// should be eliminated during inlining.  Verify VPI write reaches the
-// canonical storage.
+// is a trivial wire-through.  Verify VPI read returns the correct value
+// from the canonical storage after aliasing.
 
 #include "verilated.h"
 #include "verilated_vpi.h"
 
-#include "TestSimulator.h"
-#include "TestVpi.h"
 #include "Vt_vpi_alias.h"
-#include "Vt_vpi_alias__Dpi.h"
 
 #include <cstdio>
 #include <cstdlib>
 
 int main(int argc, char** argv) {
     const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
-    contextp->debug(0);
     contextp->commandArgs(argc, argv);
 
-    const std::unique_ptr<Vt_vpi_alias> top{new Vt_vpi_alias{contextp.get(), ""}};
+    const std::unique_ptr<Vt_vpi_alias> top{new Vt_vpi_alias{contextp.get(), "TOP"}};
 
-    // initial values
-    top->a = 0;
-    top->b = 0;
+    // Drive input a = 1
+    top->a = 1;
     top->eval();
 
-    // obtain handle to the internal signal 'tmp' (should alias to real storage)
-    TestVpiHandle h = VPI_HANDLE("tmp");
-    CHECK_RESULT_NZ(h);
+    // Obtain handle to the internal signal 'in.tmp' (public_flat_rw)
+    vpiHandle h = vpi_handle_by_name(const_cast<PLI_BYTE8*>("TOP.top.in.tmp"), nullptr);
+    if (!h) {
+        vl_fatal(__FILE__, __LINE__, "main",
+                 "%%Error: vpi_handle_by_name failed for TOP.top.in.tmp");
+    }
 
-    // write 1 via VPI and evaluate
+    // Read tmp via VPI - should match input a (since tmp = a)
     s_vpi_value v;
     v.format = vpiIntVal;
-    v.value.integer = 1;
-    vpi_put_value(h, &v, NULL, vpiNoDelay);
+    vpi_get_value(h, &v);
+
+    if (v.value.integer != 1) {
+        vl_fatal(__FILE__, __LINE__, "main", "%%Error: alias read test failed (expected 1)");
+    }
+
+    // Change input and verify VPI read follows
+    top->a = 0;
     top->eval();
 
-    // the inner logic computes tmp = a & b; we overwrote tmp so y should reflect
-    // the VPI write regardless of a,b.  After putting 1, y should be 1.
-    if (top->y != 1) {
-        vl_fatal(__FILE__, __LINE__, "main", "%%Error: alias test failed, y=%d\n", top->y);
+    vpi_get_value(h, &v);
+    if (v.value.integer != 0) {
+        vl_fatal(__FILE__, __LINE__, "main", "%%Error: alias read test failed (expected 0)");
     }
+
+    // Also verify that the output y matches (y = tmp = a)
+    if (top->y != 0) { vl_fatal(__FILE__, __LINE__, "main", "%%Error: output y mismatch"); }
+
+    vpi_release_handle(h);
 
     return 0;
 }

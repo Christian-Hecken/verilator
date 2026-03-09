@@ -1889,6 +1889,11 @@ class AstVar final : public AstNode {
     string m_name;  // Name of variable
     string m_origName;  // Original name before dot addition
     string m_tag;  // Holds the string of the verilator tag -- used in JSON output.
+    // When non-null, this public signal is a trivial alias for another variable.
+    // V3Gate detects these as simple wire-through assignments (assign A = B) and
+    // allows them to be eliminated from simulation while redirecting VPI
+    // registration to point at the alias target's storage.
+    const AstVar* m_vpiAliasp = nullptr;
     VVarType m_varType;  // Type of variable
     VDirection m_direction;  // Direction input/output etc
     VDirection m_declDirection;  // Declared direction input/output etc
@@ -2261,6 +2266,11 @@ public:
     bool attrSplitVar() const { return m_attrSplitVar; }
     bool attrIsolateAssign() const { return m_attrIsolateAssign; }
     AstIface* sensIfacep() const { return m_sensIfacep; }
+    // VPI alias: when set, VPI registration for this variable should use the
+    // alias target's storage address instead of this variable's own address.
+    // Set by V3Gate when it detects a trivial pass-through assignment (assign A = B).
+    const AstVar* vpiAlias() const { return m_vpiAliasp; }
+    void vpiAlias(const AstVar* varp) { m_vpiAliasp = varp; }
     VRandAttr rand() const { return m_rand; }
     string verilogKwd() const override;
     void lifetime(const VLifetime& flag) { m_lifetime = flag; }
