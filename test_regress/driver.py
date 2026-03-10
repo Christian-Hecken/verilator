@@ -2576,14 +2576,19 @@ class VlTest:
                 if match1:  # $scope
                     name = match1.group(2)
                     # print("VR"+ ' '*len(hier_stack) +" scope " + line)
+                    parent = '.'.join(hier_stack)
                     hier_stack += [name]
                     scope = '.'.join(hier_stack)
                     data[scope] = match1.group(1) + " " + name
+                    # Track declaration order of children (scopes and vars) within the parent
+                    data.setdefault(parent + "|order", []).append("scope:" + name)
                 elif match2:  # $var
                     # print("VR"+ ' '*len(hier_stack) +" var " + line)
                     scope = '.'.join(hier_stack)
                     var = match2.group(2)
                     data[scope + "." + var] = match2.group(1)
+                    # Track declaration order of variables within this scope
+                    data.setdefault(scope + "|order", []).append(var)
                 elif match3:  # $attrbegin
                     # print("VR"+ ' '*len(hier_stack) +" attr " + line)
                     if var:
