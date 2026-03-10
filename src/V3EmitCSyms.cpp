@@ -207,9 +207,7 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     }
 
     static std::pair<bool, std::string> isForceControlSignal(const AstVar* const signalVarp) {
-        // __VforceRd should not show up here because it is never public, but just in case it does,
-        // it should be skipped because the VPI code lazily re-creates its value
-        for (const std::string forceControlSuffix : {"__VforceEn", "__VforceVal", "__VforceRd"}) {
+        for (const std::string forceControlSuffix : {"__VforceEn", "__VforceVal"}) {
             const std::size_t suffixPos = signalVarp->name().find(forceControlSuffix);
             const bool suffixFound = suffixPos != std::string::npos;
             const bool suffixIsAtEnd

@@ -1146,8 +1146,8 @@ public:
             vl_vpi_put_word(vop, word, varBits % wordSize, numChunks * wordSize);
     }
 
-    // Recreates the __VforceRd signal's data vector, since __VforceRd is not publicly accessible
-    // in Verilated code.
+    // Recreates the force-read value from __VforceEn and __VforceVal, since __VforceRd no longer
+    // exists as a stored signal (eliminated in fix for #7092).
     template <typename T>
     static std::vector<T>
     createReadDataVector(const void* const baseSignalDatap,
@@ -2876,9 +2876,8 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
 
     const int varBits = vop->bitSize();
 
-    // __VforceRd already has the correct value, but that signal is not public and thus not present
-    // in the scope's m_varsp map, will be removed entirely eventually (#7092), so its value has to
-    // be recreated using the __VforceEn and __VforceVal signals.
+    // __VforceRd no longer exists as a stored signal (eliminated in fix for #7092).
+    // The effective read value is computed on-the-fly from __VforceEn and __VforceVal.
     const auto forceControlSignals
         = vop->varp()->isForceable()
               ? VerilatedVpiImp::getForceControlSignals(vop)
