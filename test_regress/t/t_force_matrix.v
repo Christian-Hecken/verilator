@@ -24,9 +24,9 @@ module Test(input logic clk);
   wire out_c `PUBLIC_FORCEABLE;
 
   // Model: drive out_nc from in_nc on clock; continuous assignment for out_c
-  // Use always (not always_ff) because the test intentionally writes out_nc
-  // from multiple paths (tasks), mixing always_ff non-blocking with task
-  // blocking assignments is a BLKANDNBLK error.
+  // Use always (not always_ff) with blocking assignment because the test
+  // intentionally writes out_nc from SV tasks using blocking assignments.
+  // Mixing always_ff non-blocking with task blocking causes BLKANDNBLK error.
   always @(posedge clk) begin
     out_nc = in_nc;
   end

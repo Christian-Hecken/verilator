@@ -285,8 +285,11 @@ int main(int argc, char** argv) {
                         int expected = baseline;
                         if (std::string(action) == "Write") {
                             // Direct write takes effect immediately in memory.
-                            // With eval: always_ff fires and overwrites out_nc = in_nc = 0 (baseline)
+                            // With eval on continuous: assign statement immediately overwrites
+                            // With eval on non-continuous: always block fires and overwrites
                             // Without eval: the write is visible in memory (action_value)
+                            // NOTE: Writing to continuous assignments (out_c) via VPI/C++ may
+                            // have undefined behavior, but we test it anyway to explore behavior.
                             expected = doEval ? baseline : action_value;
                         } else if (std::string(action) == "Force") {
                             // Force takes effect immediately and persists through eval.
@@ -296,6 +299,7 @@ int main(int argc, char** argv) {
                         } else {  // Release
                             // Release disables the force effect, restoring underlying logic.
                             // The signal reverts to its underlying driven value (baseline).
+                            // NOTE: SV release may behave differently than VPI/C++ release
                             expected = baseline;
                         }
 
