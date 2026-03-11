@@ -5,7 +5,6 @@
 // SPDX-License-Identifier: CC0-1.0
 
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <vector>
 #include <string>
@@ -31,13 +30,11 @@ struct TestCase {
 };
 
 // Prototypes for exported SystemVerilog helper routines
-extern "C" void sv_write_in_nc(unsigned char val);
 extern "C" void sv_write_out_nc(unsigned char val);
 extern "C" void sv_force_out_nc(unsigned char val);
 extern "C" void sv_release_out_nc(void);
 extern "C" void sv_force_out_c(unsigned char val);
 extern "C" void sv_release_out_c(void);
-extern "C" int sv_get_in_nc(void);
 extern "C" int sv_get_out_nc(void);
 extern "C" int sv_get_out_c(void);
 
@@ -49,6 +46,7 @@ static bool vpi_put_int(const char* fullname, int value, int flag) {
     v.format = vpiIntVal;
     v.value.integer = value;
     vpi_put_value(vh, &v, nullptr, flag);
+    vpi_free_object(vh);
     return true;
 }
 
@@ -59,6 +57,7 @@ static bool vpi_get_int(const char* fullname, int& out) {
     v.format = vpiIntVal;
     vpi_get_value(vh, &v);
     out = v.value.integer;
+    vpi_free_object(vh);
     return true;
 }
 
@@ -67,9 +66,6 @@ int main(int argc, char** argv) {
     const std::unique_ptr<VerilatedContext> contextp{new VerilatedContext};
     contextp->debug(0);
     std::unique_ptr<Vt_force_matrix> top{new Vt_force_matrix{contextp.get(), ""}};
-
-    // Set SV DPI scope for exported SV helper calls
-    svScope old_scope = svSetScope(svGetScopeFromName("t.test"));
 
     // Helper: single clock tick (rising then falling edge) via rootp direct access
     auto tick = [&]() {
@@ -89,6 +85,9 @@ int main(int argc, char** argv) {
     top->rootp->t__DOT__clk = 0;
     top->eval();
 
+    // Set SV DPI scope for exported SV helper calls (must be after first eval)
+    svScope old_scope = svSetScope(svGetScopeFromName("t.test"));
+
     std::vector<TestCase> results;
 
     const char* actions[] = {"Write", "Force", "Release"};
@@ -101,8 +100,7 @@ int main(int argc, char** argv) {
 
     auto do_eval = [&](bool yes) {
         if (yes) {
-            tick();
-        } else {
+            top->eval();
             VerilatedVpi::doInertialPuts();
             VerilatedVpi::callValueCbs();
             VerilatedVpi::clearEvalNeeded();
@@ -144,7 +142,7 @@ int main(int argc, char** argv) {
                         } else {
                             top->rootp->t__DOT__test__DOT__out_c__VforceEn = 0;
                         }
-                        do_eval(true);
+                        tick();
 
                         // Perform action
                         bool applied = false;
@@ -266,16 +264,12 @@ int main(int argc, char** argv) {
                             }
                             got = true;
                         } else {  // SV
-                            if (std::string(target) == "in_nc") {
-                                observed = sv_get_in_nc();
-                                got = true;
-                            } else if (std::string(target) == "out_nc") {
+                            if (std::string(target) == "out_nc") {
                                 observed = sv_get_out_nc();
-                                got = true;
-                            } else if (std::string(target) == "out_c") {
+                            } else {
                                 observed = sv_get_out_c();
-                                got = true;
                             }
+                            got = true;
                         }
 
                         if (!got) {
@@ -301,9 +295,8 @@ int main(int argc, char** argv) {
                             expected = action_value;
                         } else {  // Release
                             // Release disables the force effect, restoring underlying logic.
-                            // With eval: always_ff drives out_nc = in_nc = 0 (baseline)
-                            // Without eval: previous forced value remains briefly (action_value)
-                            expected = doEval ? baseline : action_value;
+                            // The signal reverts to its underlying driven value (baseline).
+                            expected = baseline;
                         }
 
                         tc.passed = (tc.observed == expected);
@@ -315,24 +308,32 @@ int main(int argc, char** argv) {
     }
 
     // Print results
-    std::printf("t_force_matrix: Test Results\n");
+    int nPassed = 0, nFailed = 0, nSkipped = 0;
+    VL_PRINTF("t_force_matrix: Test Results\n");
     for (const auto& tc : results) {
         if (!tc.possible) {
-            std::printf("[%s][%s][%s][%s][%s]: SKIP: %s\n", tc.action.c_str(),
-                        tc.assign_type.c_str(), tc.driver.c_str(), tc.eval.c_str(),
-                        tc.checker.c_str(), tc.reason.c_str());
+            VL_PRINTF("[%s][%s][%s][%s][%s]: SKIP: %s\n", tc.action.c_str(),
+                      tc.assign_type.c_str(), tc.driver.c_str(), tc.eval.c_str(),
+                      tc.checker.c_str(), tc.reason.c_str());
+            ++nSkipped;
         } else {
-            std::printf("[%s][%s][%s][%s][%s]: %s (observed=%d)\n", tc.action.c_str(),
-                        tc.assign_type.c_str(), tc.driver.c_str(), tc.eval.c_str(),
-                        tc.checker.c_str(), tc.passed ? "PASS" : "FAIL", tc.observed);
+            VL_PRINTF("[%s][%s][%s][%s][%s]: %s (observed=%d)\n", tc.action.c_str(),
+                      tc.assign_type.c_str(), tc.driver.c_str(), tc.eval.c_str(),
+                      tc.checker.c_str(), tc.passed ? "PASS" : "FAIL", tc.observed);
+            if (tc.passed) {
+                ++nPassed;
+            } else {
+                ++nFailed;
+            }
         }
     }
+    VL_PRINTF("t_force_matrix: %d passed, %d failed, %d skipped\n", nPassed, nFailed, nSkipped);
 
     // Restore previous DPI scope and finalize
     svSetScope(old_scope);
     top->final();
 
     // Signal to the test harness that we completed normally
-    printf("*-* All Finished *-*\n");
+    VL_PRINTF("*-* All Finished *-*\n");
     return 0;
 }

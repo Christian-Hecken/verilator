@@ -24,18 +24,15 @@ module Test(input logic clk);
   wire out_c `PUBLIC_FORCEABLE;
 
   // Model: drive out_nc from in_nc on clock; continuous assignment for out_c
-  always_ff @(posedge clk) begin
+  // Use always (not always_ff) because the test intentionally writes out_nc
+  // from multiple paths (tasks), mixing always_ff non-blocking with task
+  // blocking assignments is a BLKANDNBLK error.
+  always @(posedge clk) begin
     out_nc = in_nc;
   end
   assign out_c = in_nc;
 
   // Exported SV helpers for C++-driven test runner
-  // Write a value into the non-continuously assigned input
-  export "DPI-C" task sv_write_in_nc;
-  task sv_write_in_nc(input bit val);
-    in_nc = val;
-  endtask
-
   // Write a value into the non-continuously assigned output
   export "DPI-C" task sv_write_out_nc;
   task sv_write_out_nc(input bit val);
@@ -65,9 +62,6 @@ module Test(input logic clk);
   endtask
 
   // Simple accessors for checks from C++
-  export "DPI-C" function sv_get_in_nc;
-  function int sv_get_in_nc(); sv_get_in_nc = in_nc ? 1 : 0; endfunction
-
   export "DPI-C" function sv_get_out_nc;
   function int sv_get_out_nc(); sv_get_out_nc = out_nc ? 1 : 0; endfunction
 
