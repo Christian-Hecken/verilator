@@ -1,5 +1,8 @@
-// Minimal test_regress placement for force/write/release matrix experiments
+// ======================================================================
+// This file ONLY is placed under the Creative Commons Public Domain.
+// SPDX-FileCopyrightText: 2026 Verilator Contributors
 // SPDX-License-Identifier: CC0-1.0
+// ======================================================================
 
 `ifdef VERILATOR
 `define PUBLIC_FORCEABLE /*verilator public_flat_rw*/ /*verilator forceable*/
@@ -8,8 +11,8 @@
 `endif
 
 module t;
-  // Clock is driven from the C++ test runner to avoid # delays / infinite loops
-  reg clk = 0; // driven by C++ test main
+  // Clock is driven from the C++ test runner
+  reg clk /*verilator public_flat_rw*/ = 0;
 
   Test test (.clk(clk));
 endmodule
@@ -31,6 +34,12 @@ module Test(input logic clk);
   export "DPI-C" task sv_write_in_nc;
   task sv_write_in_nc(input bit val);
     in_nc = val;
+  endtask
+
+  // Write a value into the non-continuously assigned output
+  export "DPI-C" task sv_write_out_nc;
+  task sv_write_out_nc(input bit val);
+    out_nc = val;
   endtask
 
   // Force / release helpers for the non-continuously assigned output
