@@ -4,18 +4,19 @@
 // SPDX-FileCopyrightText: 2026 Verilator Contributors
 // SPDX-License-Identifier: CC0-1.0
 
-#include <cstdio>
-#include <memory>
-#include <vector>
-#include <string>
-#include <cstdint>
-
 #include <verilated.h>
 #include <verilated_vpi.h>
-#include "vpi_user.h"
-#include "svdpi.h"
+
 #include "Vt_force_matrix.h"
 #include "Vt_force_matrix___024root.h"
+#include "svdpi.h"
+#include "vpi_user.h"
+
+#include <cstdint>
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <vector>
 
 struct TestCase {
     std::string action;
@@ -130,7 +131,8 @@ int main(int argc, char** argv) {
                         if (std::string(assign_type) == "continuous" && std::string(driver) == "SV"
                             && std::string(action) == "Write") {
                             tc.possible = false;
-                            tc.reason = "SV cannot directly write continuous assignments (multiple drivers)";
+                            tc.reason = "SV cannot directly write continuous assignments "
+                                        "(multiple drivers)";
                             results.push_back(tc);
                             continue;
                         }
@@ -169,12 +171,14 @@ int main(int argc, char** argv) {
                             }
                         } else if (std::string(action) == "Force") {
                             if (std::string(driver) == "VPI") {
-                                applied = vpi_put_int(fullName.c_str(), action_value, vpiForceFlag);
+                                applied
+                                    = vpi_put_int(fullName.c_str(), action_value, vpiForceFlag);
                                 if (!applied) tc.reason = "vpi force failed";
                             } else if (std::string(driver) == "C++") {
                                 // Set force value and enable for the target signal
                                 if (std::string(target) == "out_nc") {
-                                    top->rootp->t__DOT__test__DOT__out_nc__VforceVal = action_value;
+                                    top->rootp->t__DOT__test__DOT__out_nc__VforceVal
+                                        = action_value;
                                     top->rootp->t__DOT__test__DOT__out_nc__VforceEn = 1;
                                 } else {
                                     top->rootp->t__DOT__test__DOT__out_c__VforceVal = action_value;
@@ -193,10 +197,12 @@ int main(int argc, char** argv) {
                             // First set up a force to release
                             bool setup_ok = false;
                             if (std::string(driver) == "VPI") {
-                                setup_ok = vpi_put_int(fullName.c_str(), action_value, vpiForceFlag);
+                                setup_ok
+                                    = vpi_put_int(fullName.c_str(), action_value, vpiForceFlag);
                             } else if (std::string(driver) == "C++") {
                                 if (std::string(target) == "out_nc") {
-                                    top->rootp->t__DOT__test__DOT__out_nc__VforceVal = action_value;
+                                    top->rootp->t__DOT__test__DOT__out_nc__VforceVal
+                                        = action_value;
                                     top->rootp->t__DOT__test__DOT__out_nc__VforceEn = 1;
                                 } else {
                                     top->rootp->t__DOT__test__DOT__out_c__VforceVal = action_value;
