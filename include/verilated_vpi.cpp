@@ -1125,7 +1125,7 @@ public:
     static void setAllBitsToValue(const VerilatedVpioVar* vop, uint8_t bitValue) {
         assert(bitValue == 0 || bitValue == 1);
         const uint64_t word = (bitValue == 1) ? -1ULL : 0ULL;
-        const std::size_t wordSize = vlTypeSize(vop->varp()->vltype());
+        const std::size_t wordSize = 8ULL * vlTypeSize(vop->varp()->vltype());
         assert(wordSize > 0);
         const uint32_t varBits = vop->bitSize();
         const std::size_t numChunks = (varBits / wordSize);
