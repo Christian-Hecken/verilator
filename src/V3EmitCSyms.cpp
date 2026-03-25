@@ -88,6 +88,8 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     using ModVarPair = std::pair<const AstNodeModule*, const AstVar*>;
 
     // STATE
+    std::unordered_map<const AstVar*, const AstVar*>
+        m_aliasMap;  // Map from an alias to its driver
     AstCFunc* m_cfuncp = nullptr;  // Current function
     AstNodeModule* m_modp = nullptr;  // Current module
     std::vector<ScopeModPair> m_scopes;  // Every scope by module
@@ -274,11 +276,18 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         return out;
     }
 
-    static std::string insertVarStatement(const ScopeVarData& svd, const AstScope* const scopep,
-                                          const AstVar* const varp, const int udim, const int pdim,
-                                          const std::string& bounds) {
+    std::string insertVarStatement(const ScopeVarData& svd, const AstScope* const scopep,
+                                   const AstVar* const varp, const int udim, const int pdim,
+                                   const std::string& bounds) {
+        // For the address expression, redirect to the canonical variable
+        // so VPI reads return the live value from the alias target's storage.
+        const AstVar* addrVarp = varp;
+        {
+            const auto aliasIt = m_aliasMap.find(varp);
+            if (aliasIt != m_aliasMap.end()) addrVarp = aliasIt->second;
+        }
         const std::string varName = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
-                                    + "." + protect(varp->name());
+                                    + "." + protect(addrVarp->name());
         const std::string vlEnumType = varp->vlEnumType();
         const bool needsEntSize = needsEmittedEntSize(vlEnumType);
 
@@ -765,7 +774,12 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         if ((nodep->isSigUserRdPublic() || nodep->isSigUserRWPublic()) && !m_cfuncp) {
             m_modVars.emplace_back(m_modp, nodep);
         }
+        // Track alias info: follow vpiAlias chain to find canonical storage var
+        const AstVar* canon = nodep;
+        while (const AstVar* const next = canon->aliasDriver()) canon = next;
+        if (canon != nodep) m_aliasMap[nodep] = canon;
     }
+
     void visit(AstNodeCoverDecl* nodep) override {
         // Assign both global and module-local bin numbers. Most generated
         // coverage uses module-local counters, but static/package/class helper

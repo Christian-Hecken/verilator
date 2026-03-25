@@ -417,7 +417,8 @@ class DeadVisitor final : public VNVisitor {
         }
     }
     bool mightElimVar(const AstVar* nodep) const {
-        if (nodep->isSigPublic()) return false;  // Can't elim publics!
+        if (nodep->isSigPublic() && !nodep->aliasDriver())
+            return false;  // Can't elim non-aliased publics!
         if (nodep->isIO() || nodep->isClassMember() || nodep->sensIfacep()) return false;
         if (nodep->isTemp() && !nodep->isTrace()) return true;
         return m_elimUserVars;  // Post-Trace can kill most anything
@@ -490,7 +491,7 @@ class DeadVisitor final : public VNVisitor {
             for (std::vector<AstVar*>::iterator it = m_varsp.begin(); it != m_varsp.end(); ++it) {
                 AstVar* const varp = *it;
                 if (!varp) continue;
-                if (varp->user1() == 0) {
+                if (varp->user1() == 0 && !varp->aliasDriver()) {
                     UINFO(4, "  Dead " << varp);
                     if (varp->dtypep()) varp->dtypep()->user1Inc(-1);
                     deleting(varp);

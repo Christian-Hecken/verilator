@@ -2129,6 +2129,8 @@ class AstVar final : public AstNode {
     string m_name;  // Name of variable
     string m_origName;  // Original name before dot addition
     string m_tag;  // Holds the string of the verilator tag -- used in JSON output.
+    const AstVar* m_aliasDriverp
+        = nullptr;  // If non-null, this variable is a trivial alias for another variable
     VVarType m_varType;  // Type of variable
     VDirection m_direction;  // Direction input/output etc
     VDirection m_declDirection;  // Declared direction input/output etc
@@ -2541,6 +2543,8 @@ public:
     bool attrFsmResetArc() const { return m_attrFsmResetArc; }
     bool attrFsmArcInclCond() const { return m_attrFsmArcInclCond; }
     AstIface* sensIfacep() const { return m_sensIfacep; }
+    const AstVar* aliasDriver() const { return m_aliasDriverp; }
+    void aliasDriver(const AstVar* driverp) { m_aliasDriverp = driverp; }
     VRandAttr rand() const { return m_rand; }
     string verilogKwd() const override;
     void lifetime(const VLifetime& flag) { m_lifetime = flag; }
