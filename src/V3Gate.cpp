@@ -67,6 +67,10 @@ public:
         // UINFO(0, "     NR: " << nonReducibleReason << "  " << name());
         m_reducible = false;
     }
+    void setReducible(const char* /*reducibleReason*/) {
+        // Re-enable substitution, e.g. after detecting a trivial alias
+        m_reducible = true;
+    }
     void clearDedupable(const char* /*nonDedupableReason*/) {
         // UINFO(0, "     ND: " << nonDedupableReason << "  " << name());
         m_dedupable = false;
@@ -166,8 +170,11 @@ public:
             }
             if (vscp->varp()->isSigPublic()) {
                 // Public signals shouldn't be changed, pli code might be messing with them
-                vVtxp->clearReducibleAndDedupable("SigPublic");
-                vVtxp->setConsumed("SigPublic");
+                // Exception: aliases or signals with getter functions can be optimized
+                if (!vscp->varp()->vpiAlias() && !vscp->varp()->vpiGetterp()) {
+                    vVtxp->clearReducibleAndDedupable("SigPublic");
+                    vVtxp->setConsumed("SigPublic");
+                }
             }
             if (vscp->varp()->isIO() && vscp->scopep()->isTop()) {
                 // We may need to convert to/from sysc/reg sigs
@@ -527,6 +534,164 @@ public:
     bool varAssigned(const AstVarScope* scopep) const {
         return m_lhsVarRef && (m_lhsVarRef->varScopep() == scopep);
     }
+};
+
+//######################################################################
+// GateRematerialization
+// Scan for readonly public signals that can be rematerialized via getter functions.
+// This allows the signal to be optimized away while still providing VPI access
+// through a computed getter function.
+
+class GateRematerialization final {
+    // STATE
+    GateGraph& m_graph;
+    size_t m_statGetterReduced = 0;
+
+    static bool getterEligible(const AstVar* varp) {
+        const AstNodeDType* const dtypep = varp->dtypeSkipRefp();
+        return dtypep && !dtypep->isString() && !varp->isWide()
+               && !VN_IS(dtypep, UnpackArrayDType);
+    }
+
+    AstCFunc* makeGetterFunc(AstVarScope* vscp, AstNodeExpr* exprp) {
+        AstVar* const varp = vscp->varp();
+        AstScope* const scopep = vscp->scopep();
+        const AstNodeDType* const dtypep = varp->dtypeSkipRefp();
+        const std::string funcName
+            = "__VpubGetter__" + scopep->nameDotless() + "__" + varp->nameProtect();
+        AstCFunc* const funcp
+            = new AstCFunc{varp->fileline(), funcName, scopep, dtypep->cType("", false, false)};
+        funcp->isLoose(true);
+        funcp->dontCombine(true);
+        funcp->entryPoint(true);  // Prevent removal by V3InlineCFuncs
+        funcp->addStmtsp(new AstCReturn{varp->fileline(), exprp->cloneTree(false)});
+        scopep->addBlocksp(funcp);
+        return funcp;
+    }
+
+    void analyze() {
+        for (V3GraphVertex& vtx : m_graph.vertices()) {
+            GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
+            if (!vVtxp) continue;
+            AstVar* const varp = vVtxp->varScp()->varp();
+
+            // Only handle readonly user-declared public signals (public_flat_rd)
+            if (!varp->isSigUserRdPublic()) continue;
+            // if (varp->isSigUserRWPublic()) continue;  // Skip read-write signals
+            if (vVtxp->reducible()) continue;  // was not blocked
+
+            // Must have one or more drivers (relaxed requirement for rematerialization)
+            if (vVtxp->inEmpty()) continue;
+
+            GateLogicVertex* const lVtxp
+                = vVtxp->inEdges().frontp()->fromp()->as<GateLogicVertex>();
+            if (!lVtxp->reducible()) continue;
+
+            const GateOkVisitor okVisitor{lVtxp->nodep(), false, false};
+            if (!okVisitor.isSimple()) continue;
+            if (!okVisitor.varAssigned(vVtxp->varScp())) continue;
+            if (!getterEligible(varp)) continue;
+
+            // Create getter function and enable reduction
+            AstNodeExpr* const getterExprp = okVisitor.substitutionp();
+            AstCFunc* const getterFuncp = makeGetterFunc(vVtxp->varScp(), getterExprp);
+            varp->vpiGetterp(getterFuncp);
+            varp->vpiAliasElim(true);
+            vVtxp->setReducible("PublicGetter");
+            ++m_statGetterReduced;
+            UINFO(5, "PublicGetter: " << varp->name() << " -> " << getterFuncp->name());
+        }
+    }
+
+    explicit GateRematerialization(GateGraph& graph)
+        : m_graph{graph} {
+        analyze();
+    }
+
+    ~GateRematerialization() {
+        V3Stats::addStat("Optimizations, Gate sigs getter-reduced (public)", m_statGetterReduced);
+    }
+
+public:
+    static void apply(GateGraph& graph) { GateRematerialization{graph}; }
+};
+
+//######################################################################
+// GateTrivialAliasing
+// Scan for public signals that are trivially aliased (assign A = B where B is a
+// single VarRef). Re-enable gate reduction for those and record the alias on
+// AstVar so V3EmitCSyms can register VPI with the alias target's storage address.
+// This has stricter requirements than rematerialization: exactly one driver,
+// pure VarRef RHS, same scope, etc.
+
+class GateTrivialAliasing final {
+    // STATE
+    GateGraph& m_graph;
+    size_t m_statAliasReduced = 0;
+
+    void analyze() {
+        for (V3GraphVertex& vtx : m_graph.vertices()) {
+            GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
+            if (!vVtxp) continue;
+            AstVar* const varp = vVtxp->varScp()->varp();
+
+            // Only handle read-write user-declared public signals (public_flat_rw)
+            if (!varp->isSigUserRWPublic()) continue;
+            if (vVtxp->reducible()) continue;  // was not blocked
+            if (!v3Global.opt.publicFlatRW()) continue;
+
+            // Must have exactly one driver (strict requirement for aliasing)
+            if (!vVtxp->inSize1()) continue;
+
+            GateLogicVertex* const lVtxp
+                = vVtxp->inEdges().frontp()->fromp()->as<GateLogicVertex>();
+            if (!lVtxp->reducible()) continue;
+
+            const GateOkVisitor okVisitor{lVtxp->nodep(), false, false};
+            if (!okVisitor.isSimple()) continue;
+            if (!okVisitor.varAssigned(vVtxp->varScp())) continue;
+
+            // Must be a pure VarRef on RHS (strict requirement for aliasing)
+            if (!VN_IS(okVisitor.substitutionp(), VarRef)) continue;
+
+            // Must have exactly one source variable (strict requirement for aliasing)
+            if (okVisitor.readVscps().size() != 1) continue;
+
+            // This is a trivial alias: assign A = B
+            AstVarScope* const driverVscp = okVisitor.readVscps().front();
+            AstVar* const driverVarp = driverVscp->varp();
+
+            // Only redirect when the driver variable will survive V3Dead:
+            // it must be public (immune from elimination) or IO.
+            // Non-public targets would be deleted by V3Dead, leaving dangling pointers.
+            if (!driverVarp->isSigPublic() && !driverVarp->isIO()) continue;
+
+            // Source and target must share the same scope so the address
+            // expression in V3EmitCSyms (scope.target_name) is valid.
+            // Cross-scope aliases (e.g. interface port -> module port) cannot
+            // be redirected because the target name doesn't exist in the
+            // source's struct.
+            if (vVtxp->varScp()->scopep() != driverVscp->scopep()) continue;
+
+            varp->vpiAlias(driverVarp);
+            // Re-enable substitution; GateInline will propagate and eliminate the var
+            vVtxp->setReducible("TrivialAlias");
+            ++m_statAliasReduced;
+            UINFO(5, "TrivialAlias: " << varp->name() << " -> " << driverVscp->varp()->name());
+        }
+    }
+
+    explicit GateTrivialAliasing(GateGraph& graph)
+        : m_graph{graph} {
+        analyze();
+    }
+
+    ~GateTrivialAliasing() {
+        V3Stats::addStat("Optimizations, Gate sigs alias-reduced (public)", m_statAliasReduced);
+    }
+
+public:
+    static void apply(GateGraph& graph) { GateTrivialAliasing{graph}; }
 };
 
 //######################################################################
@@ -1301,6 +1466,18 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         std::unique_ptr<GateGraph> graphp = GateBuildVisitor::apply(netlistp);
         if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph");
 
+        // Re-enable gate reduction for public signals via rematerialization and aliasing.
+        // Must run before GateInline so the re-enabled vars are eligible for inlining.
+        // First, handle read-write signals via trivial aliasing
+        GateTrivialAliasing::apply(*graphp);
+        // Then, handle readonly signals via getter functions (rematerialization)
+        GateRematerialization::apply(*graphp);
+
+        // Rebuild graph to include getter function bodies for optimization
+        graphp.reset();  // Destroy old graph first to release AstUser state
+        graphp = GateBuildVisitor::apply(netlistp);
+        if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph_with_getters");
+
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);
 
@@ -1316,6 +1493,26 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Inline variables
         GateInline::apply(*graphp);
         if (dumpGraphLevel() >= 6) graphp->dumpDotFilePrefixed("gate_inline");
+
+        // Mark alias-reduced vars that have no remaining references for storage
+        // elimination. Keep vars that are still referenced by generated logic
+        // (e.g. Verilog testbench accesses) so C++ still compiles.
+        {
+            std::unordered_set<const AstVar*> referencedVars;
+            netlistp->foreach(
+                [&](const AstNodeVarRef* refp) { referencedVars.insert(refp->varp()); });
+            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
+                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
+                     stmtp = stmtp->nextp()) {
+                    if (AstVar* const varp = VN_CAST(stmtp, Var)) {
+                        if (varp->vpiAlias() && !varp->isIO() && !referencedVars.count(varp)) {
+                            varp->vpiAliasElim(true);
+                            varp->noCReset(true);
+                        }
+                    }
+                }
+            }
+        }
 
         // Remove redundant logic
         if (v3Global.opt.fDedupe()) {

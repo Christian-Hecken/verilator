@@ -4159,6 +4159,35 @@ VerilatedScope::forceableVarInsert(const char* namep, void* datap, bool isParam,
     return &(m_varsp->find(namep)->second);
 }
 
+void VerilatedScope::varInsertComputed(const char* namep, void* datap, VerilatedVarGetter getterp,
+                                       bool isParam, VerilatedVarType vltype, int vlflags,
+                                       int udims, int pdims...) VL_MT_UNSAFE {
+    // Same as varInsert, but the data payload is a model pointer and values are
+    // materialized on demand by the getter.
+
+    if (!m_varsp) m_varsp = new VerilatedVarNameMap;
+    VerilatedVar var(namep, datap, vltype, static_cast<VerilatedVarFlags>(vlflags), udims, pdims,
+                     isParam, getterp);
+
+    va_list ap;
+    va_start(ap, pdims);
+    for (int i = 0; i < udims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        var.m_unpacked[i].m_left = msb;
+        var.m_unpacked[i].m_right = lsb;
+    }
+    for (int i = 0; i < pdims; ++i) {
+        const int msb = va_arg(ap, int);
+        const int lsb = va_arg(ap, int);
+        var.m_packed[i].m_left = msb;
+        var.m_packed[i].m_right = lsb;
+    }
+    va_end(ap);
+
+    m_varsp->emplace(namep, std::move(var));
+}
+
 // cppcheck-suppress unusedFunction  // Used by applications
 VerilatedVar* VerilatedScope::varFind(const char* namep) const VL_MT_SAFE_POSTINIT {
     if (VL_LIKELY(m_varsp)) {
