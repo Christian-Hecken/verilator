@@ -1559,7 +1559,8 @@ VerilatedVpiImp::getForceControlSignals(const VerilatedVpioVar* const baseSignal
         .forceRead{std::unique_ptr<VerilatedVpioVar>{forceReadSignalVop}}};
 }
 
-QData vl_vpi_get_word(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset);
+QData vl_vpi_get_word(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset,
+                      void* overrideDatap = nullptr);
 template <typename T>
 T VerilatedVpiImp::getReadDataWord(const VerilatedVpioVar* baseSignalVop,
                                    const VerilatedVpioVar* forceEnableSignalVop,
@@ -3209,11 +3210,12 @@ struct VarAccessInfo final {
 
 template <typename T>
 VarAccessInfo<T> vl_vpi_var_access_info(const VerilatedVpioVarBase* vop, size_t bitCount,
-                                        size_t addOffset) {
+                                        size_t addOffset, void* overrideDatap) {
     // VarAccessInfo generation
     // vop - variable to access (already indexed)
     // bitCount - how many bits to write/read
     // addOffset - additional offset to apply (within the packed array element)
+    // overrideDatap - optional override for data pointer (for rematerialized variables)
 
     const size_t wordBits = sizeof(T) * 8;
     uint32_t varBits = vop->bitSize();
@@ -3226,7 +3228,8 @@ VarAccessInfo<T> vl_vpi_var_access_info(const VerilatedVpioVarBase* vop, size_t 
                          bitCount, varBits - addOffset});
 
     VarAccessInfo<T> info;
-    info.m_datap = reinterpret_cast<T*>(vop->varDatap());
+    void* const rawDatap = overrideDatap ? overrideDatap : vop->varDatap();
+    info.m_datap = reinterpret_cast<T*>(rawDatap);
     if (vop->varp()->vltype() == VLVT_WDATA) {
         assert(sizeof(T) == sizeof(EData));
         assert(bitCount <= wordBits);
@@ -3262,9 +3265,11 @@ VarAccessInfo<T> vl_vpi_var_access_info(const VerilatedVpioVarBase* vop, size_t 
 }
 
 template <typename T>
-T vl_vpi_get_word_gen(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset) {
+T vl_vpi_get_word_gen(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset,
+                      void* overrideDatap) {
     const size_t wordBits = sizeof(T) * 8;
-    const VarAccessInfo<T> info = vl_vpi_var_access_info<T>(vop, bitCount, addOffset);
+    const VarAccessInfo<T> info
+        = vl_vpi_var_access_info<T>(vop, bitCount, addOffset, overrideDatap);
     if (info.m_maskHi)
         return ((info.m_datap[info.m_wordOffset] & info.m_maskLo) >> info.m_bitOffset)
                | ((info.m_datap[info.m_wordOffset + 1] & info.m_maskHi)
@@ -3275,7 +3280,7 @@ T vl_vpi_get_word_gen(const VerilatedVpioVarBase* vop, size_t bitCount, size_t a
 template <typename T>
 void vl_vpi_put_word_gen(const VerilatedVpioVar* vop, T word, size_t bitCount, size_t addOffset) {
     const size_t wordBits = sizeof(T) * 8;
-    const VarAccessInfo<T> info = vl_vpi_var_access_info<T>(vop, bitCount, addOffset);
+    const VarAccessInfo<T> info = vl_vpi_var_access_info<T>(vop, bitCount, addOffset, nullptr);
 
     if (info.m_maskHi) {
         info.m_datap[info.m_wordOffset + 1]
@@ -3289,13 +3294,15 @@ void vl_vpi_put_word_gen(const VerilatedVpioVar* vop, T word, size_t bitCount, s
 
 // bitCount: maximum number of bits to read, will stop earlier if it reaches the var bounds
 // addOffset: additional read bitoffset
-QData vl_vpi_get_word(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset) {
+// overrideDatap: optional override for data pointer (for rematerialized variables)
+QData vl_vpi_get_word(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset,
+                      void* overrideDatap) {
     switch (vop->varp()->vltype()) {
-    case VLVT_UINT8: return vl_vpi_get_word_gen<CData>(vop, bitCount, addOffset);
-    case VLVT_UINT16: return vl_vpi_get_word_gen<SData>(vop, bitCount, addOffset);
-    case VLVT_UINT32: return vl_vpi_get_word_gen<IData>(vop, bitCount, addOffset);
-    case VLVT_UINT64: return vl_vpi_get_word_gen<QData>(vop, bitCount, addOffset);
-    case VLVT_WDATA: return vl_vpi_get_word_gen<EData>(vop, bitCount, addOffset);
+    case VLVT_UINT8: return vl_vpi_get_word_gen<CData>(vop, bitCount, addOffset, overrideDatap);
+    case VLVT_UINT16: return vl_vpi_get_word_gen<SData>(vop, bitCount, addOffset, overrideDatap);
+    case VLVT_UINT32: return vl_vpi_get_word_gen<IData>(vop, bitCount, addOffset, overrideDatap);
+    case VLVT_UINT64: return vl_vpi_get_word_gen<QData>(vop, bitCount, addOffset, overrideDatap);
+    case VLVT_WDATA: return vl_vpi_get_word_gen<EData>(vop, bitCount, addOffset, overrideDatap);
     default:
         VL_VPI_ERROR_(__FILE__, __LINE__, "%s: Unsupported vltype (%d)", __func__,
                       vop->varp()->vltype());
@@ -3321,7 +3328,24 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
 
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
-    void* const varDatap = vop->varDatap();
+
+    // Thread-local scratch buffer for rematerialization
+    static thread_local std::vector<QData> t_rematScratch;
+
+    void* varDatap = vop->varDatap();
+
+    // Check if this is a rematerialized variable
+    if (VL_UNLIKELY(varp->hasGetter())) {
+        // Calculate required size in QData words
+        const size_t words = (varp->entBits() + 63) / 64;
+        if (t_rematScratch.size() < words) { t_rematScratch.resize(words); }
+        // Clear the scratch buffer to prevent stale bits
+        std::fill_n(t_rematScratch.data(), words, 0);
+        // Call the getter to rematerialize the value
+        varp->getterp()(varp->datap(), t_rematScratch.data());
+        // Use the scratch buffer as the data source
+        varDatap = t_rematScratch.data();
+    }
 
     if (!vl_check_format(vop, valuep, true)) return;
     // string data type is dynamic and may vary in size during simulation
@@ -3340,7 +3364,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             t_out.resize(words);
             valuep->value.vector = t_out.data();
             for (int i = 0; i < words; ++i) {
-                t_out[i].aval = vl_vpi_get_word(vop, 32, i * 32);
+                t_out[i].aval = vl_vpi_get_word(vop, 32, i * 32, varDatap);
                 t_out[i].bval = 0;
             }
             return;
@@ -3348,7 +3372,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         if (varp->vltype() == VLVT_UINT64 && varBits > 32) {
             t_out.resize(2);
             valuep->value.vector = t_out.data();
-            const QData data = vl_vpi_get_word(vop, 64, 0);
+            const QData data = vl_vpi_get_word(vop, 64, 0, varDatap);
             t_out[1].aval = static_cast<IData>(data >> 32ULL);
             t_out[1].bval = 0;
             t_out[0].aval = static_cast<IData>(data);
@@ -3357,7 +3381,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         }
         t_out.resize(1);
         valuep->value.vector = t_out.data();
-        t_out[0].aval = vl_vpi_get_word(vop, 32, 0);
+        t_out[0].aval = vl_vpi_get_word(vop, 32, 0, varDatap);
         t_out[0].bval = 0;
         return;
     } else if (valuep->format == vpiBinStrVal) {
@@ -3374,7 +3398,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         const int chars = (varBits + 2) / 3;
         t_outDynamicStr.resize(chars);
         for (size_t i = 0; i < chars; ++i) {
-            const char val = vl_vpi_get_word(vop, 3, i * 3);
+            const char val = vl_vpi_get_word(vop, 3, i * 3, varDatap);
             t_outDynamicStr[chars - i - 1] = '0' + val;
         }
         valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
@@ -3382,16 +3406,16 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     } else if (valuep->format == vpiDecStrVal) {
         if (varp->vltype() == VLVT_UINT8) {
             vl_strprintf(t_outDynamicStr, "%hhu",
-                         static_cast<unsigned char>(vl_vpi_get_word(vop, 8, 0)));
+                         static_cast<unsigned char>(vl_vpi_get_word(vop, 8, 0, varDatap)));
         } else if (varp->vltype() == VLVT_UINT16) {
             vl_strprintf(t_outDynamicStr, "%hu",
-                         static_cast<unsigned short>(vl_vpi_get_word(vop, 16, 0)));
+                         static_cast<unsigned short>(vl_vpi_get_word(vop, 16, 0, varDatap)));
         } else if (varp->vltype() == VLVT_UINT32) {
             vl_strprintf(t_outDynamicStr, "%u",
-                         static_cast<unsigned int>(vl_vpi_get_word(vop, 32, 0)));
+                         static_cast<unsigned int>(vl_vpi_get_word(vop, 32, 0, varDatap)));
         } else if (varp->vltype() == VLVT_UINT64) {
             vl_strprintf(t_outDynamicStr, "%llu",  // lintok-format-ll
-                         static_cast<unsigned long long>(vl_vpi_get_word(vop, 64, 0)));
+                         static_cast<unsigned long long>(vl_vpi_get_word(vop, 64, 0, varDatap)));
         }
         valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
         return;
@@ -3399,7 +3423,7 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
         const int chars = (varBits + 3) >> 2;
         t_outDynamicStr.resize(chars);
         for (size_t i = 0; i < chars; ++i) {
-            const char val = vl_vpi_get_word(vop, 4, i * 4);
+            const char val = vl_vpi_get_word(vop, 4, i * 4, varDatap);
             t_outDynamicStr[chars - i - 1] = "0123456789abcdef"[static_cast<int>(val)];
         }
         valuep->value.str = const_cast<PLI_BYTE8*>(t_outDynamicStr.c_str());
@@ -3410,14 +3434,14 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
                 valuep->value.str = reinterpret_cast<char*>(varDatap);
                 return;
             }
-            t_outDynamicStr = *vop->varStringDatap();
+            t_outDynamicStr = *reinterpret_cast<std::string*>(varDatap);
             valuep->value.str = const_cast<char*>(t_outDynamicStr.c_str());
             return;
         } else {
             const int chars = VL_BYTES_I(varBits);
             t_outDynamicStr.resize(chars);
             for (size_t i = 0; i < chars; ++i) {
-                const char val = vl_vpi_get_word(vop, 8, i * 8);
+                const char val = vl_vpi_get_word(vop, 8, i * 8, varDatap);
                 // other simulators replace [leading?] zero chars with spaces, replicate here.
                 t_outDynamicStr[chars - i - 1] = val ? val : ' ';
             }
@@ -3425,13 +3449,13 @@ void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
             return;
         }
     } else if (valuep->format == vpiIntVal) {
-        valuep->value.integer = vl_vpi_get_word(vop, 32, 0);
+        valuep->value.integer = vl_vpi_get_word(vop, 32, 0, varDatap);
         return;
     } else if (valuep->format == vpiRealVal) {
-        valuep->value.real = *(vop->varRealDatap());
+        valuep->value.real = *reinterpret_cast<double*>(varDatap);
         return;
     } else if (valuep->format == vpiScalarVal) {
-        valuep->value.scalar = vl_vpi_get_word(vop, 32, 0) ? vpi1 : vpi0;
+        valuep->value.scalar = vl_vpi_get_word(vop, 32, 0, varDatap) ? vpi1 : vpi0;
         return;
     } else if (valuep->format == vpiSuppressVal) {
         return;

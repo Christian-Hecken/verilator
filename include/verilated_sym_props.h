@@ -69,6 +69,11 @@ public:
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
+#ifndef VERILATOR_VERILATED_VAR_GETTER_T
+#define VERILATOR_VERILATED_VAR_GETTER_T
+using VerilatedVarGetter = void (*)(const void* modelp, void* datap);
+#endif
+
 class VerilatedVarProps VL_NOT_FINAL {
     // TYPES
     static constexpr uint32_t MAGIC = 0xddc4f829UL;
@@ -262,10 +267,11 @@ public:
 struct VerilatedForceControlSignals;
 class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
-    void* const m_datap;  // Location of data
+    void* const m_datap;  // Location of data or model for computed accessors
     const char* const m_namep;  // Name - slowpath
     std::unique_ptr<const VerilatedForceControlSignals>
         m_forceControlSignals;  // Force control signals
+    const VerilatedVarGetter m_getterp = nullptr;
 
 protected:
     const bool m_isParam;
@@ -278,12 +284,22 @@ protected:
     VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
                  VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
                  std::unique_ptr<const VerilatedForceControlSignals> forceControlSignals);
+    VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
+                 VerilatedVarGetter getterp)
+        : VerilatedVarProps{vltype, vlflags, udims, pdims}
+        , m_datap{datap}
+        , m_namep{namep}
+        , m_getterp{getterp}
+        , m_isParam{isParam} {}
 
 public:
     ~VerilatedVar();
     VerilatedVar(VerilatedVar&&);
     // ACCESSORS
     void* datap() const { return m_datap; }
+    bool hasGetter() const { return m_getterp != nullptr; }
+    VerilatedVarGetter getterp() const { return m_getterp; }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
     const VerilatedForceControlSignals* forceControlSignals() const {
