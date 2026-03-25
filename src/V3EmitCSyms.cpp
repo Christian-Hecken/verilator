@@ -87,6 +87,8 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     using ModVarPair = std::pair<const AstNodeModule*, const AstVar*>;
 
     // STATE
+    // Map from a variable to the canonical variable it aliases to (via vpiAlias chains).
+    std::unordered_map<const AstVar*, const AstVar*> m_aliasMap;
     AstCFunc* m_cfuncp = nullptr;  // Current function
     AstNodeModule* m_modp = nullptr;  // Current module
     std::vector<ScopeModPair> m_scopes;  // Every scope by module
@@ -378,7 +380,12 @@ class EmitCSyms final : EmitCBaseVisitorConst {
         if ((nodep->isSigUserRdPublic() || nodep->isSigUserRWPublic()) && !m_cfuncp) {
             m_modVars.emplace_back(m_modp, nodep);
         }
+        // Track alias info: follow vpiAlias chain to find canonical storage var
+        const AstVar* canon = nodep;
+        while (const AstVar* const next = canon->vpiAlias()) canon = next;
+        if (canon != nodep) m_aliasMap[nodep] = canon;
     }
+
     void visit(AstNodeCoverDecl* nodep) override {
         // Assign numbers to all bins, so we know how big of an array to use
         if (!nodep->dataDeclNullp()) {  // else duplicate we don't need code for
@@ -768,8 +775,17 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
         add("// Setup public variables");
         for (const auto& itpair : m_scopeVars) {
             const ScopeVarData& svd = itpair.second;
+            // Resolve alias: use the canonical/storage variable for the address
+            // expression while keeping the original pretty name for VPI.
+            const AstVar* varp = svd.m_varp;
             const AstScope* const scopep = svd.m_scopep;
-            const AstVar* const varp = svd.m_varp;
+            // For the address expression, redirect to the canonical variable
+            // so VPI reads return the live value from the alias target's storage.
+            const AstVar* addrVarp = varp;
+            {
+                const auto aliasIt = m_aliasMap.find(varp);
+                if (aliasIt != m_aliasMap.end()) addrVarp = aliasIt->second;
+            }
             int pdim = 0;
             int udim = 0;
             std::string bounds;
@@ -805,9 +821,10 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
             stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
 
+            // Use the alias target's name for the storage address expression
             const std::string varName
                 = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
-                  + protect(varp->name());
+                  + protect(addrVarp->name());
 
             if (!varp->isParam()) {
                 stmt += ", &(";

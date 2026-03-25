@@ -64,6 +64,10 @@ public:
         // UINFO(0, "     NR: " << nonReducibleReason << "  " << name());
         m_reducible = false;
     }
+    void setReducible(const char* /*reducibleReason*/) {
+        // Re-enable substitution, e.g. after detecting a trivial alias
+        m_reducible = true;
+    }
     void clearDedupable(const char* /*nonDedupableReason*/) {
         // UINFO(0, "     ND: " << nonDedupableReason << "  " << name());
         m_dedupable = false;
@@ -507,6 +511,79 @@ public:
     bool varAssigned(const AstVarScope* scopep) const {
         return m_lhsVarRef && (m_lhsVarRef->varScopep() == scopep);
     }
+};
+
+//######################################################################
+// GateTrivialAliasReduction
+// Scan for public signals that are trivially aliased (assign A = B where B is a
+// single VarRef). Re-enable gate reduction for those and record the alias on
+// AstVar so V3EmitCSyms can register VPI with the alias target's storage address.
+
+class GateTrivialAliasReduction final {
+    // STATE
+    GateGraph& m_graph;
+    size_t m_statAliasReduced = 0;
+
+    void analyze() {
+        // Only alias-reduce when --public-flat-rw is active.  With that flag
+        // every signal is public for VPI access; the struct members remain but
+        // VPI registration is redirected to the canonical variable's address.
+        // Per-signal annotations (/*verilator public_flat*/, .vlt public) imply
+        // the user accesses the struct member directly from C++, and the assign
+        // must stay so the member value is kept up to date.
+        if (!v3Global.opt.publicFlatRW()) return;
+        for (V3GraphVertex& vtx : m_graph.vertices()) {
+            GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
+            if (!vVtxp) continue;
+            AstVar* const varp = vVtxp->varScp()->varp();
+            // Only handle user-declared public signals (public_flat_rw/rd) that
+            // were blocked from reduction.  Do NOT touch structurally-public signals
+            // (e.g. hierarchical block ports) -- those are functionally needed.
+            if (!varp->isSigUserRdPublic()) continue;
+            if (vVtxp->reducible()) continue;  // was not blocked
+            // Must have exactly one driver
+            if (!vVtxp->inSize1()) continue;
+            GateLogicVertex* const lVtxp
+                = vVtxp->inEdges().frontp()->fromp()->as<GateLogicVertex>();
+            if (!lVtxp->reducible()) continue;
+            // Check that the driver is a simple assignment whose RHS is a pure VarRef
+            const GateOkVisitor okVisitor{lVtxp->nodep(), false, false};
+            if (!okVisitor.isSimple()) continue;
+            if (!okVisitor.varAssigned(vVtxp->varScp())) continue;
+            if (okVisitor.readVscps().size() != 1) continue;  // single source
+            if (!VN_IS(okVisitor.substitutionp(), VarRef)) continue;  // pure VarRef RHS
+            // This is a trivial alias: assign A = B
+            AstVarScope* const driverVscp = okVisitor.readVscps().front();
+            AstVar* const driverVarp = driverVscp->varp();
+            // Only redirect when the driver variable will survive V3Dead:
+            // it must be public (immune from elimination) or IO.
+            // Non-public targets would be deleted by V3Dead, leaving dangling pointers.
+            if (!driverVarp->isSigPublic() && !driverVarp->isIO()) continue;
+            // Source and target must share the same scope so the address
+            // expression in V3EmitCSyms (scope.target_name) is valid.
+            // Cross-scope aliases (e.g. interface port -> module port) cannot
+            // be redirected because the target name doesn't exist in the
+            // source's struct.
+            if (vVtxp->varScp()->scopep() != driverVscp->scopep()) continue;
+            varp->vpiAlias(driverVarp);
+            // Re-enable substitution; GateInline will propagate and eliminate the var
+            vVtxp->setReducible("TrivialAlias");
+            ++m_statAliasReduced;
+            UINFO(5, "TrivialAlias: " << varp->name() << " -> " << driverVscp->varp()->name());
+        }
+    }
+
+    explicit GateTrivialAliasReduction(GateGraph& graph)
+        : m_graph{graph} {
+        analyze();
+    }
+
+    ~GateTrivialAliasReduction() {
+        V3Stats::addStat("Optimizations, Gate sigs alias-reduced (public)", m_statAliasReduced);
+    }
+
+public:
+    static void apply(GateGraph& graph) { GateTrivialAliasReduction{graph}; }
 };
 
 //######################################################################
@@ -1276,6 +1353,10 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         std::unique_ptr<GateGraph> graphp = GateBuildVisitor::apply(netlistp);
         if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph");
 
+        // Re-enable gate reduction for trivially-aliased public signals (assign A = B).
+        // Must run before GateInline so the re-enabled vars are eligible for inlining.
+        GateTrivialAliasReduction::apply(*graphp);
+
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);
 
@@ -1287,6 +1368,26 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Inline variables
         GateInline::apply(*graphp);
         if (dumpGraphLevel() >= 6) graphp->dumpDotFilePrefixed("gate_inline");
+
+        // Mark alias-reduced vars that have no remaining references for storage
+        // elimination. Keep vars that are still referenced by generated logic
+        // (e.g. Verilog testbench accesses) so C++ still compiles.
+        {
+            std::unordered_set<const AstVar*> referencedVars;
+            netlistp->foreach(
+                [&](const AstNodeVarRef* refp) { referencedVars.insert(refp->varp()); });
+            for (AstNode* modp = netlistp->modulesp(); modp; modp = modp->nextp()) {
+                for (AstNode* stmtp = VN_AS(modp, NodeModule)->stmtsp(); stmtp;
+                     stmtp = stmtp->nextp()) {
+                    if (AstVar* const varp = VN_CAST(stmtp, Var)) {
+                        if (varp->vpiAlias() && !varp->isIO() && !referencedVars.count(varp)) {
+                            varp->vpiAliasElim(true);
+                            varp->noCReset(true);
+                        }
+                    }
+                }
+            }
+        }
 
         // Remove redundant logic
         if (v3Global.opt.fDedupe()) {

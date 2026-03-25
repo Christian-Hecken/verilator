@@ -1889,6 +1889,11 @@ class AstVar final : public AstNode {
     string m_name;  // Name of variable
     string m_origName;  // Original name before dot addition
     string m_tag;  // Holds the string of the verilator tag -- used in JSON output.
+    // When non-null, this public signal is a trivial alias for another variable.
+    // V3Gate detects these as simple wire-through assignments (assign A = B) and
+    // allows them to be eliminated from simulation while redirecting VPI
+    // registration to point at the alias target's storage.
+    const AstVar* m_vpiAliasp = nullptr;
     VVarType m_varType;  // Type of variable
     VDirection m_direction;  // Direction input/output etc
     VDirection m_declDirection;  // Declared direction input/output etc
@@ -1931,6 +1936,7 @@ class AstVar final : public AstNode {
     bool m_isDpiOpenArray : 1;  // DPI import open array
     bool m_isHideLocal : 1;  // Verilog local
     bool m_isHideProtected : 1;  // Verilog protected
+    bool m_vpiAliasElim : 1;  // Alias var storage eliminated from C++ struct
     bool m_noCReset : 1;  // Do not do automated CReset creation
     bool m_noReset : 1;  // Do not do automated reset/randomization
     bool m_noSubst : 1;  // Do not substitute out references
@@ -1985,6 +1991,7 @@ class AstVar final : public AstNode {
         m_isDpiOpenArray = false;
         m_isHideLocal = false;
         m_isHideProtected = false;
+        m_vpiAliasElim = false;
         m_noCReset = false;
         m_noReset = false;
         m_noSubst = false;
@@ -2143,6 +2150,8 @@ public:
     void isHideLocal(bool flag) { m_isHideLocal = flag; }
     bool isHideProtected() const { return m_isHideProtected; }
     void isHideProtected(bool flag) { m_isHideProtected = flag; }
+    bool vpiAliasElim() const { return m_vpiAliasElim; }
+    void vpiAliasElim(bool flag) { m_vpiAliasElim = flag; }
     bool noCReset() const { return m_noCReset; }
     void noCReset(bool flag) { m_noCReset = flag; }
     bool noReset() const { return m_noReset; }
@@ -2261,6 +2270,11 @@ public:
     bool attrSplitVar() const { return m_attrSplitVar; }
     bool attrIsolateAssign() const { return m_attrIsolateAssign; }
     AstIface* sensIfacep() const { return m_sensIfacep; }
+    // VPI alias: when set, VPI registration for this variable should use the
+    // alias target's storage address instead of this variable's own address.
+    // Set by V3Gate when it detects a trivial pass-through assignment (assign A = B).
+    const AstVar* vpiAlias() const { return m_vpiAliasp; }
+    void vpiAlias(const AstVar* varp) { m_vpiAliasp = varp; }
     VRandAttr rand() const { return m_rand; }
     string verilogKwd() const override;
     void lifetime(const VLifetime& flag) { m_lifetime = flag; }
