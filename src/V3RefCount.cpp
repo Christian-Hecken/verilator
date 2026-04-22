@@ -29,31 +29,42 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 //######################################################################
 // RefCount state, as a visitor of each AstNode
 
-class RefCountVisitor final : public VNVisitorConst {
-    std::unordered_map<AstVar*, uint32_t> m_varRefCnts;  // Ref count for each variable
+class RefCountVisitor final : public VNVisitor {
 
     void visit(AstVarRef* nodep) {
-        ++m_varRefCnts[nodep->varp()];
-        iterateChildrenConst(nodep);
+        if (AstVar* const varp = nodep->varp()) { varp->user1Inc(); }
+        iterateChildren(nodep);
     }
 
-    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
+    void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
 public:
-    explicit RefCountVisitor(AstNetlist* nodep) {
-        iterateChildrenConst(nodep);
-        for (const std::pair<AstVar*, uint32_t> VarAndCount : m_varRefCnts) {
-            const AstVar* var = VarAndCount.first;
-            const uint32_t count = VarAndCount.second;
-            V3Stats::addStatSum("Signal " + var->prettyName() + " usages: ", count);
-        }
-    }
+    explicit RefCountVisitor(AstNetlist* nodep) { iterateChildren(nodep); }
     ~RefCountVisitor() override = default;
+};
+
+//######################################################################
+// RefCount printer
+
+class RefCountPrinter final : public VNVisitorConst {
+    void visit(AstVar* nodep) {
+        V3Stats::addStatSum("Signal " + nodep->prettyName() + " usages: ", nodep->user1());
+        iterateChildrenConst(nodep);
+    }
+    void visit(AstNode* nodep) { iterateChildrenConst(nodep); }
+
+public:
+    explicit RefCountPrinter(AstNetlist* nodep) { iterateChildrenConst(nodep); }
+    ~RefCountPrinter() override = default;
 };
 
 //######################################################################
 // RefCount class functions
 
 void V3RefCount::countAll(AstNetlist* nodep) {
-    { RefCountVisitor{nodep}; }
+    {
+        const VNUser1InUse m_inuser1;
+        RefCountVisitor{nodep};
+        RefCountPrinter{nodep};
+    }
 }
