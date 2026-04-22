@@ -88,6 +88,7 @@
 #include "V3ProtectLib.h"
 #include "V3RandSequence.h"
 #include "V3Randomize.h"
+#include "V3RefCount.h"
 #include "V3Reloop.h"
 #include "V3Reorder.h"
 #include "V3Sampled.h"
@@ -231,6 +232,9 @@ static void process() {
             cout << "--debug-exit-elab: Exiting after elaboration pass\n";
             v3Global.vlExit(0);
         }
+
+        // Count variable usage
+        V3RefCount::countAll(v3Global.rootp());
 
         // Coverage insertion
         //    Before we do dead code elimination and inlining, or we'll lose it.
