@@ -95,6 +95,7 @@
 #include "V3Sched.h"
 #include "V3Scope.h"
 #include "V3Scoreboard.h"
+#include "V3SelfAssign.h"
 #include "V3Slice.h"
 #include "V3Split.h"
 #include "V3SplitAs.h"
@@ -235,6 +236,9 @@ static void process() {
 
         // Count variable usage
         V3RefCount::countAll(v3Global.rootp());
+
+        // Delete self-assignments (e.g. asssign x = x;)
+        V3SelfAssign::deleteSelfAssigns(v3Global.rootp());
 
         // Coverage insertion
         //    Before we do dead code elimination and inlining, or we'll lose it.
