@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+# DESCRIPTION: Verilator: Verilog Test driver/expect definition
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of either the GNU Lesser General Public License Version 3
+# or the Perl Artistic License Version 2.0.
+# SPDX-FileCopyrightText: 2024 Wilson Snyder
+# SPDX-License-Identifier: LGPL-3.0-only OR Artistic-2.0
+
+import vltest_bootstrap
+
+test.scenarios('simulator')
+
+test.lint()
+
+graph_dump_filename = test.glob_one(test.obj_dir +
+                                    "/Vt_assigngraph_*_simple_assign_graph__eval_initial__TOP.dot")
+
+if test.vlt_all:
+    a_vertex_pattern = r'n0.*label="t.a"'
+    b_vertex_pattern = r'n1.*label="t.b"'
+    c_vertex_pattern = r'n2.*label="t.c"'
+    b_to_a_edge_pattern = r'n1 -> n0'
+    c_to_b_edge_pattern = r'n2 -> n1'
+
+    test.file_grep(graph_dump_filename, a_vertex_pattern)
+    test.file_grep(graph_dump_filename, b_vertex_pattern)
+    test.file_grep(graph_dump_filename, c_vertex_pattern)
+    test.file_grep(graph_dump_filename, b_to_a_edge_pattern)
+    test.file_grep(graph_dump_filename, c_to_b_edge_pattern)
+
+test.passes()

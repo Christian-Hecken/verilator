@@ -96,6 +96,7 @@
 #include "V3Scope.h"
 #include "V3Scoreboard.h"
 #include "V3SelfAssign.h"
+#include "V3SimpleAssignGraph.h"
 #include "V3Slice.h"
 #include "V3Split.h"
 #include "V3SplitAs.h"
@@ -470,6 +471,8 @@ static void process() {
             // Schedule the logic
             V3Sched::schedule(v3Global.rootp());
             V3Sched::transformForks(v3Global.rootp());
+
+            V3SimpleAssignGraph::dumpSimpleAssigns(v3Global.rootp());
 
             // Post scheduling transformations - TODO: this should at least be renamed
             V3Clock::clockAll(v3Global.rootp());
