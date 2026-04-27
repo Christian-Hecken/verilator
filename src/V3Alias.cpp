@@ -2,6 +2,9 @@
 
 #include "V3Ast.h"
 
+using Driver = AstVarScope*;
+using Alias = AstVarScope*;
+
 bool isAliasingAssigmnent(const AstAssign* nodep) {
     const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
     const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
@@ -12,72 +15,97 @@ bool isAliasingAssigmnent(const AstAssign* nodep) {
            && rhsp->access().isReadOnly();
 }
 
+void checkNoChildren(const AstNode* nodep)
+{
+    UASSERT_OBJ(!nodep->op1p(), nodep, "Unexpected child under expected leaf node");
+    UASSERT_OBJ(!nodep->op2p(), nodep, "Unexpected child under expected leaf node");
+    UASSERT_OBJ(!nodep->op3p(), nodep, "Unexpected child under expected leaf node");
+    UASSERT_OBJ(!nodep->op4p(), nodep, "Unexpected child under expected leaf node");
+}
+
 class AliasDetectionVisitor : public VNVisitorConst {
-    using Driver = const AstVar*;
-    using Alias = const AstVar*;
     std::unordered_map<Alias, Driver> m_aliases;
     std::unordered_set<Alias> m_multiDrivenVars;
     void visit(AstAssign* nodep) override {
         const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
         const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
-        const AstVar* lhsVarp = lhsp->varp();
-        const AstVar* rhsVarp = rhsp->varp();
-        UASSERT_OBJ(lhsVarp, lhsp, "Assignment lhs var reference has no associated AstVar");
-        UASSERT_OBJ(rhsVarp, rhsp, "Assignment rhs var reference has no associated AstVar");
+        UASSERT_OBJ(lhsp->varScopep(), lhsp,
+                    "Assignment lhs var reference has no associated AstVarScope");
+        UASSERT_OBJ(rhsp->varScopep(), rhsp,
+                    "Assignment rhs var reference has no associated AstVarScope");
+        Alias aliasingCandidate = lhsp->varScopep();
+        Driver currentDriver = rhsp->varScopep();
         if (isAliasingAssigmnent(nodep)
-            && m_multiDrivenVars.find(lhsVarp) == m_multiDrivenVars.end()) {
-            Driver currentDriver = rhsVarp;
-            Driver previousDriver = [this, lhsVarp]() {
-                auto it = m_aliases.find(lhsVarp);
+            && m_multiDrivenVars.find(aliasingCandidate) == m_multiDrivenVars.end()) {
+            Driver previousDriver = [this, aliasingCandidate]() {
+                auto it = m_aliases.find(aliasingCandidate);
                 return (it != m_aliases.end()) ? it->second : nullptr;
             }();
             if (previousDriver && currentDriver != previousDriver)
-                m_multiDrivenVars.insert(lhsVarp);
+                m_multiDrivenVars.insert(aliasingCandidate);
             else
-                m_aliases[lhsVarp] = currentDriver;
+                m_aliases[aliasingCandidate] = currentDriver;
         }
     }
     void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
 public:
     AliasDetectionVisitor(AstNetlist* rootp) { iterateConst(rootp); }
-    static std::unordered_set<const AstVar*> findAliasingVars(AstNetlist* rootp) {
-        auto aliasesAndDrivers = AliasDetectionVisitor{rootp}.m_aliases;
-        std::unordered_set<Alias> aliases;
-        for (const std::pair<Alias, Driver> aliasAndDriver : aliasesAndDrivers) {
-            aliases.insert(aliasAndDriver.first);
-        }
-        return aliases;
+    static std::unordered_map<Alias, Driver> findAliases(AstNetlist* rootp) {
+        return AliasDetectionVisitor{rootp}.m_aliases;
     }
 };
 
 class AliasReplacementVisitor : public VNVisitor {
-    const std::unordered_set<const AstVar*> m_aliasingVars;
-    void visit(AstAssign* nodep) override {
-        const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
-        const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
-        const AstVar* lhsVarp = lhsp->varp();
-        const AstVar* rhsVarp = rhsp->varp();
-        UASSERT_OBJ(lhsVarp, lhsp, "Assignment lhs var reference has no associated AstVar");
-        UASSERT_OBJ(rhsVarp, rhsp, "Assignment rhs var reference has no associated AstVar");
-        if (isAliasingAssigmnent(nodep)
-            && m_aliasingVars.find(lhsVarp) != m_aliasingVars.end()) {
-                // TODO: Need to find the driver's varScope(?)
-                // Then replace the aliasee's varScope with the driver's varScope
-                // Ah, but difficulty: This must be done for _every_ occurrence of the aliasee's varScope, not just within assignments!
-                // Finally, remove the AstVar* for the aliasee itself
+    const std::unordered_map<Alias, Driver> m_aliases;
+    std::unordered_set<AstVar*> m_aliasVarps;
+    void visit(AstVarRef* nodep) override {
+        UASSERT_OBJ(nodep->varScopep(), nodep, "AstVarRef has no scope");
+        Alias aliasingCandidate = nodep->varScopep();
+        if (m_aliases.find(aliasingCandidate) != m_aliases.end()) {
+            // AstVarRef* driverp
+            //     = new AstVarRef(nullptr, m_aliases.at(aliasingCandidate), VAccess{});
+            // nodep->replaceWith(driverp);
+            // pushDeletep(nodep);
         }
+        checkNoChildren(nodep);
+    }
+    void visit(AstVarScope* nodep) {
+        if (m_aliases.find(nodep) != m_aliases.end()) {
+            // Driver driverp = m_aliases.at(nodep);
+            // nodep->replaceWith(driverp);
+            // pushDeletep(nodep);
+            // TODO: Instead of deleting, store in driver?
+        }
+        checkNoChildren(nodep);
+    }
+    void visit(AstVar* nodep) {
+        if (m_aliasVarps.find(nodep) != m_aliasVarps.end()) {
+            // nodep->unlinkFrBack();
+            // pushDeletep(nodep);
+            // TODO: Instead of deleting, store in driver?
+        }
+        checkNoChildren(nodep);
     }
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
 public:
-    AliasReplacementVisitor(const std::unordered_set<const AstVar*> aliasingVars) : m_aliasingVars(aliasingVars) {}
-    static void
-    replacePublicAliasesWithDrivers(const AstNetlist* rootp,
-                                    const std::unordered_set<const AstVar*>& aliasingVars) {}
+    AliasReplacementVisitor(AstNetlist* rootp, const std::unordered_map<Alias, Driver> aliases)
+        : m_aliases(aliases) {
+        for (const std::pair<Alias, Driver> aliasAndDriver : m_aliases) {
+            AstVar* aliasVarp = aliasAndDriver.first->varp();
+            UASSERT_OBJ(aliasVarp, aliasAndDriver.first, "AstVarScope for alias has no AstVar");
+            m_aliasVarps.insert(aliasVarp);
+        }
+        iterate(rootp);
+    }
+    static void replacePublicAliasesWithDrivers(AstNetlist* rootp,
+                                                const std::unordered_map<Alias, Driver> aliases) {
+        AliasReplacementVisitor{rootp, aliases};
+    }
 };
 
 void V3Alias::removePublicAliases(AstNetlist* rootp) {
-    const std::unordered_set<const AstVar*> aliasingVars
-        = AliasDetectionVisitor::findAliasingVars(rootp);
-    AliasReplacementVisitor::replacePublicAliasesWithDrivers(rootp, aliasingVars);
+    const std::unordered_map<Alias, Driver> aliases = AliasDetectionVisitor::findAliases(rootp);
+    AliasReplacementVisitor::replacePublicAliasesWithDrivers(rootp, aliases);
 }
