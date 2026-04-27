@@ -1911,6 +1911,7 @@ class AstVar final : public AstNode {
     VDirection m_declDirection;  // Declared direction input/output etc
     VLifetime m_lifetime;  // Lifetime
     VRandAttr m_rand;  // Randomizability of this variable (rand, randc, etc)
+    std::unordered_set<const AstVar*> m_aliases;  // Aliasing vars that are driven by this
     int m_pinNum = 0;  // For JSON, if non-zero the connection pin number
     bool m_ansi : 1;  // Params or pins declared in the module header, rather than the body
     bool m_declTyped : 1;  // Declared as type (for dedup check)
@@ -2327,6 +2328,8 @@ public:
                && !noCReset() && !(basicp() && basicp()->isEvent());
     }
     static AstVar* scVarRecurse(AstNode* nodep);
+    void addAlias(const AstVar* nodep) { m_aliases.insert(nodep); }
+    const std::unordered_set<const AstVar*> aliases() const { return m_aliases; }
 };
 class AstVarScope final : public AstNode {
     // A particular scoped usage of a variable

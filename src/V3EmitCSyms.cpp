@@ -503,6 +503,37 @@ class EmitCSyms final : EmitCBaseVisitorConst {
                     std::piecewise_construct,  //
                     std::forward_as_tuple(scpSym + " " + varp->name()),  //
                     std::forward_as_tuple(scpSym, varBasePretty, varp, modp, scopep));
+
+                const AstVar* const driverp = varp;
+                const std::function<void(const AstVar* const)> emplaceAliases
+                    = [&](const AstVar* const varp) {
+                          for (const AstVar* const aliasp : varp->aliases()) {
+                              std::string whole = scopep->name() + "__DOT__" + aliasp->name();
+                              std::string scpName;
+                              std::string aliasBase;
+                              if (VString::startsWith(whole, "__DOT__TOP"))
+                                  whole.replace(0, 10, "");
+                              const std::string::size_type dpos = whole.rfind("__DOT__");
+                              if (dpos != std::string::npos) {
+                                  scpName = whole.substr(0, dpos);
+                                  aliasBase = whole.substr(dpos + std::strlen("__DOT__"));
+                              } else {
+                                  aliasBase = whole;
+                              }
+
+                              const std::string aliasBasePretty
+                                  = AstNode::vpiName(VName::dehash(aliasBase));
+
+                              m_scopeVars.emplace(  //
+                                  std::piecewise_construct,  //
+                                  std::forward_as_tuple(scpSym + " " + aliasp->name()),  //
+                                  std::forward_as_tuple(scpSym, aliasBasePretty, driverp, modp,
+                                                        scopep));
+
+                              emplaceAliases(aliasp);
+                          }
+                      };
+                emplaceAliases(varp);
             }
         }
     }
