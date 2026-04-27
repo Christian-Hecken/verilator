@@ -18,6 +18,7 @@
 
 #include "V3Active.h"
 #include "V3ActiveTop.h"
+#include "V3Alias.h"
 #include "V3Assert.h"
 #include "V3AssertPre.h"
 #include "V3AssertProp.h"
@@ -422,6 +423,9 @@ static void process() {
             // After V3TraceDecl so we don't trace additional signals inserted to implement
             // forcing.
             V3Force::forceAll(v3Global.rootp());
+
+            // Remove public aliases to re-enable optimizations
+            V3Alias::removePublicAliases(v3Global.rootp());
 
             // DFG optimization
             if (v3Global.opt.fDfg()) V3DfgOptimizer::optimize(v3Global.rootp());
