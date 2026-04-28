@@ -6,6 +6,8 @@ VL_DEFINE_DEBUG_FUNCTIONS;
 
 using Driver = AstVarScope*;
 using Alias = AstVarScope*;
+using DriverVarp = AstVar*;
+using AliasVarp = AstVar*;
 
 bool isAliasingAssigmnent(const AstNodeAssign* nodep) {
     const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
@@ -120,7 +122,7 @@ public:
 
 class AliasReplacementVisitor : public VNVisitor {
     const std::unordered_map<Alias, Driver> m_aliases;
-    std::unordered_set<AstVar*> m_aliasVarps;
+    std::unordered_map<AliasVarp, DriverVarp> m_aliasVarps;
     void visit(AstVarRef* nodep) override {
         checkNoChildren(nodep);
         UASSERT_OBJ(nodep->varScopep(), nodep, "AstVarRef has no scope");
@@ -140,9 +142,7 @@ class AliasReplacementVisitor : public VNVisitor {
             // Idea: Generic traversal over AstNode, if op*p is an AstVarScope*, replace this
             // TODO: Wrong approach - AstVarScopes aren't op*p, but member variables
             // -> Maybe use static reflection?
-            Driver driverp = m_aliases.find(nodep)->second;
             nodep->unlinkFrBack();
-            // driverp->addAlias(nodep); // TODO: Add to varp instead
             pushDeletep(nodep);
         }
     }
@@ -150,9 +150,9 @@ class AliasReplacementVisitor : public VNVisitor {
         checkNoChildren(nodep);
         if (m_aliasVarps.find(nodep) != m_aliasVarps.end()) {
             nodep->unlinkFrBack();
-            pushDeletep(nodep);
-            // TODO: Instead of deleting, store in driver?
-            // -> Set/vector of AstNode* -> Can store both AstVar* and AstVarScope* in it
+            AstVar* driverp = m_aliasVarps.find(nodep)->second;
+            driverp->addAlias(nodep);
+            // pushDeletep(nodep); // TODO: Ensure deletion in AstVar destructor
         }
     }
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
@@ -162,8 +162,9 @@ public:
         : m_aliases(aliases) {
         for (const std::pair<Alias, Driver> aliasAndDriver : m_aliases) {
             AstVar* aliasVarp = aliasAndDriver.first->varp();
+            AstVar* driverVarp = aliasAndDriver.second->varp();
             UASSERT_OBJ(aliasVarp, aliasAndDriver.first, "AstVarScope for alias has no AstVar");
-            m_aliasVarps.insert(aliasVarp);
+            m_aliasVarps[aliasVarp] = driverVarp;
         }
         iterate(rootp);
     }

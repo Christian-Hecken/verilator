@@ -224,19 +224,27 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     static std::string insertVarStatement(const ScopeVarData& svd, const AstScope* const scopep,
                                           const AstVar* const varp, const int udim, const int pdim,
                                           const std::string& bounds) {
+        return insertAliasingVarStatement(svd, scopep, varp, varp, udim, pdim, bounds);
+    }
+
+    static std::string insertAliasingVarStatement(const ScopeVarData& svd,
+                                                  const AstScope* const scopep,
+                                                  const AstVar* const aliasp,
+                                                  const AstVar* const driverp, const int udim,
+                                                  const int pdim, const std::string& bounds) {
         std::string stmt;
         stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
         stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
 
         const std::string varName = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect())
-                                    + "." + protect(varp->name());
+                                    + "." + protect(aliasp->name());
 
-        if (!varp->isParam()) {
+        if (!driverp->isParam()) {
             stmt += ", &(";
             stmt += varName;
             stmt += "), false, ";
-        } else if (varp->vlEnumType() == "VLVT_STRING"
-                   && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
+        } else if (driverp->vlEnumType() == "VLVT_STRING"
+                   && !VN_IS(driverp->subDTypep(), UnpackArrayDType)) {
             stmt += ", const_cast<void*>(static_cast<const void*>(";
             stmt += varName;
             stmt += ".c_str())), true, ";
@@ -246,9 +254,9 @@ class EmitCSyms final : EmitCBaseVisitorConst {
             stmt += "))), true, ";
         }
 
-        stmt += varp->vlEnumType();  // VLVT_UINT32 etc
+        stmt += driverp->vlEnumType();  // VLVT_UINT32 etc
         stmt += ", ";
-        stmt += varp->vlEnumDir();  // VLVD_IN etc
+        stmt += driverp->vlEnumDir();  // VLVD_IN etc
         stmt += ", ";
         stmt += std::to_string(udim);
         stmt += ", ";
@@ -1049,6 +1057,24 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
                 const std::string stmt
                     = insertVarStatement(svd, scopep, varp, udim, pdim, bounds) + ";";
                 add(stmt);
+
+                const AstVar* const driverp = varp;
+                auto insertAliases
+                    = [add, svd, scopep, driverp, udim, pdim, bounds](const AstVar* const varp) {
+                          auto insertAliases_impl
+                              = [add, svd, scopep, driverp, udim, pdim,
+                                 bounds](const auto& self, const AstVar* const varp) -> void {
+                              for (const AstVar* alias : varp->aliases()) {
+                                  const std::string stmt
+                                      = insertAliasingVarStatement(svd, scopep, alias, driverp,
+                                                                   udim, pdim, bounds)
+                                        + ";";
+                                  add(stmt);
+                                  self(self, alias);
+                              }
+                          };
+                          insertAliases_impl(insertAliases_impl, varp);
+                      };
             }
         }
     }
