@@ -10,19 +10,28 @@ always_comb begin
   alias1 = driver1;
 end
 
-wire cycle0;
-wire cycle1;
-wire cycle2;
-assign cycle0 = cycle1;
-assign cycle1 = cycle2;
-assign cycle2 = cycle0;
+wire chainDriver;
+wire chainAlias0;
+wire chainAlias1;
+wire chainAlias2;
+assign chainAlias0 = chainDriver;
+assign chainAlias1 = chainAlias0;
+assign chainAlias2 = chainAlias1;
+
+// wire cycle0;
+// wire cycle1;
+// wire cycle2;
+// assign cycle0 = cycle1;
+// assign cycle1 = cycle2;
+// assign cycle2 = cycle0;
 
 // Not aliases
-wire assignmentMultiDriven;
+//wire assignmentMultiDriven;
 wire multiDriver0;
 wire multiDriver1;
-assign assignmentMultiDriven = multiDriver0;
-assign assignmentMultiDriven = multiDriver1;
+//assign assignmentMultiDriven = multiDriver0;
+// TODO: This gets eliminated by V3Tristate
+//assign assignmentMultiDriven = multiDriver1;
 
 /* verilator lint_off MULTIDRIVEN */
 bit alwaysMultiDriven;

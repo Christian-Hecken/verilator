@@ -11,6 +11,6 @@ import vltest_bootstrap
 
 test.scenarios('simulator')
 
-test.lint(verilator_flags2=["--debug --debugi 0"])
+test.lint(verilator_flags2=["--debug --debugi 0 --debugi-V3Alias 9"])
 
 test.passes()
