@@ -416,7 +416,8 @@ static void process() {
             V3Force::forceAll(v3Global.rootp());
 
             // Remove public aliases to re-enable optimizations
-            V3Alias::removePublicAliases(v3Global.rootp());
+            if (!v3Global.opt.hierChild())  // TODO: Doesn't work yet in hierarchical verilation
+                V3Alias::removePublicAliases(v3Global.rootp());
 
             // DFG optimization
             if (v3Global.opt.fDfg()) V3DfgOptimizer::optimize(v3Global.rootp());
