@@ -1,6 +1,7 @@
 #include "V3Alias.h"
 
 #include "V3Ast.h"
+#include "V3Error.h"
 
 #include <unordered_map>
 
@@ -39,6 +40,12 @@ class AliasDetectionVisitor : public VNVisitor {
             || (nodep->keyword() != VAlwaysKwd::ALWAYS_COMB
                 && nodep->keyword() != VAlwaysKwd::CONT_ASSIGN))
             m_contextAllowsAliasing = false;
+        iterateChildren(nodep);
+    }
+
+    void visit(AstCFunc* nodep) {  // Bandaid fix: Resolves t_func_public
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing = false;
         iterateChildren(nodep);
     }
 
@@ -81,6 +88,20 @@ class AliasDetectionVisitor : public VNVisitor {
         Alias aliasingCandidate = lhsp->varScopep();
         Driver currentDriver = rhsp->varScopep();
 
+        const auto isVirtualInterface = [](AstVarScope* varScopep) {
+            AstIfaceRefDType* const ifaceRefp
+                = VN_CAST(varScopep->varp()->dtypep()->skipRefp(), IfaceRefDType);
+            return ifaceRefp && ifaceRefp->isVirtual();
+        };
+
+        if (isVirtualInterface(currentDriver)) {
+            UINFO(3, "Signal " << aliasingCandidate->name() << " driven by virtual interface "
+                               << currentDriver->name() << ", marking as ineligible");
+            m_multiDrivenVars.insert(aliasingCandidate);
+            m_aliases.erase(m_aliases.find(aliasingCandidate));
+            return;
+        }
+
         // TODO: If non-aliasing assignment (or in context that doesn't allow aliasing),
         // immediately put it into the non-eligible category Else it could happen that one aliasing
         // assignment is picked even though there are several non-aliasing assignments
@@ -113,8 +134,8 @@ class AliasDetectionVisitor : public VNVisitor {
                                    << " is in context that does not allow aliasing");
                 // TODO: Erase from m_aliases
                 m_multiDrivenVars.insert(
-                    aliasingCandidate);  // TODO: Rename m_multiDrivenVars into something like
-                                         // 'm_NotAliasingEligible'
+                    aliasingCandidate);  // TODO: Rename m_multiDrivenVars into
+                                         // something like 'm_NotAliasingEligible'
             }
         }
     }
@@ -166,6 +187,7 @@ class AliasReplacementVisitor : public VNVisitor {
             AstVarScope* driverScopep = m_aliases.at(aliasingCandidate);
             AstVarRef* driverp
                 = new AstVarRef(driverScopep->fileline(), driverScopep, nodep->access());
+            UINFO(3, "Replacing alias " << nodep->name() << " with driver " << driverp->name());
             nodep->replaceWith(driverp);
             pushDeletep(nodep);
         }
@@ -185,18 +207,25 @@ class AliasReplacementVisitor : public VNVisitor {
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
 
     void propagatePublicToDrivers(AliasVarp aliasVarp) {
-        DriverVarp driverVarp = m_aliasVarps.at(aliasVarp);
-        while (driverVarp != aliasVarp) {
-            if (aliasVarp->isSigPublic()) driverVarp->sigPublic(true);
-            if (aliasVarp->isSigModPublic()) driverVarp->sigModPublic(true);
-            if (aliasVarp->isSigUserRdPublic()) driverVarp->sigUserRdPublic(true);
-            if (aliasVarp->isSigUserRWPublic()) driverVarp->sigUserRWPublic(true);
+        std::unordered_set<DriverVarp> visited;
+        visited.insert(aliasVarp);
 
-            std::unordered_map<AliasVarp, DriverVarp>::const_iterator nextDriverIt
-                = m_aliasVarps.find(driverVarp);
-            if (nextDriverIt == m_aliasVarps.end()) return;
-            driverVarp = nextDriverIt->second;
+        // Find the final driver in the chain
+        DriverVarp driverVarp = m_aliasVarps.at(aliasVarp);
+        while (m_aliasVarps.find(driverVarp) != m_aliasVarps.end()) {
+            if (visited.find(driverVarp) != visited.end()) {
+                return;  // Cycle detected, stop
+            }
+            visited.insert(driverVarp);
+            driverVarp = m_aliasVarps.at(driverVarp);
         }
+
+        // Propagate public flags from the alias to the final driver
+        if (aliasVarp->isSigPublic()) driverVarp->sigPublic(true);
+        if (aliasVarp->isSigModPublic()) driverVarp->sigModPublic(true);
+        if (aliasVarp->isSigUserRdPublic()) driverVarp->sigUserRdPublic(true);
+        if (aliasVarp->isSigUserRWPublic()) driverVarp->sigUserRWPublic(true);
+        if (aliasVarp->isContinuously()) driverVarp->isContinuously(true);
     }
 
     void ensureDriversPublic() {

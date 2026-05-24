@@ -416,7 +416,10 @@ static void process() {
             V3Force::forceAll(v3Global.rootp());
 
             // Remove public aliases to re-enable optimizations
-            if (!v3Global.opt.hierChild())  // TODO: Doesn't work yet in hierarchical verilation
+            if (!v3Global.opt.hierChild() &&  // TODO: Doesn't work yet in hierarchical verilation
+                !v3Global.hasVirtIfaces()  // Bandaid fix to get
+                                           // t_virtual_interface_only_with_assignw to pass
+            )
                 V3Alias::removePublicAliases(v3Global.rootp());
 
             // DFG optimization

@@ -524,6 +524,9 @@ class EmitCSyms final : EmitCBaseVisitorConst {
                               const std::string aliasBasePretty
                                   = AstNode::vpiName(VName::dehash(aliasBase));
 
+                              UINFO(3, "Emitting alias " << aliasp->name() << ", driven by "
+                                                         << driverp->name());
+
                               m_scopeVars.emplace(  //
                                   std::piecewise_construct,  //
                                   std::forward_as_tuple(scpSym + " " + aliasp->name()),  //
