@@ -33,36 +33,42 @@ void checkNoChildren(const AstNode* nodep) {
     UASSERT_OBJ(!nodep->op4p(), nodep, "Unexpected child under expected leaf node");
 }
 
-class AliasDetectionVisitor : public VNVisitor {
+struct AliasMaps {
+    std::unordered_map<Alias, Driver> aliases;
+    std::unordered_map<Alias, std::vector<AstNodeAssign*>> aliasingAssignments;
+};
+
+class AliasDetectionVisitor : public VNVisitorConst {
     std::unordered_map<Alias, Driver> m_aliases;
     std::unordered_set<Alias> m_multiDrivenVars;
+    std::unordered_map<Alias, std::vector<AstNodeAssign*>> m_aliasingAssignments;
     bool m_contextAllowsAliasing{true};
 
-    void visit(AstAlways* nodep) {
+    void visit(AstAlways* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
         if (nodep->sentreep()
             || (nodep->keyword() != VAlwaysKwd::ALWAYS_COMB
                 && nodep->keyword() != VAlwaysKwd::CONT_ASSIGN))
             m_contextAllowsAliasing = false;
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
-    void visit(AstCFunc* nodep) {  // Bandaid fix for t_func_public
+    void visit(AstCFunc* nodep) override {  // Bandaid fix for t_func_public
         VL_RESTORER(m_contextAllowsAliasing);
         m_contextAllowsAliasing = false;
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
-    void visit(AstInitial* nodep) {
+    void visit(AstInitial* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
         m_contextAllowsAliasing = false;
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
-    void visit(AstFinal* nodep) {
+    void visit(AstFinal* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
         m_contextAllowsAliasing = false;
-        iterateChildren(nodep);
+        iterateChildrenConst(nodep);
     }
 
     void visit(AstNodeAssign* nodep) override {
@@ -136,11 +142,13 @@ class AliasDetectionVisitor : public VNVisitor {
                                    << " can be aliased, marking as alias of driver "
                                    << currentDriver->name());
                 m_aliases[aliasingCandidate] = currentDriver;
-                pushDeletep(nodep->unlinkFrBack());  // Remove the now-trivial assignment `x=x` to
-                                                     // avoid circular assignment warnings
-                                                     // TODO: Do this in the removal visitor, and
-                                                     // instead just insert the assignments in a
-                                                     // set here, to keep this visitor const
+                m_aliasingAssignments[aliasingCandidate].push_back(nodep);
+                //pushDeletep(nodep->unlinkFrBack());
+                // Remove the now-trivial assignment `x=x` to
+                // avoid circular assignment warnings
+                // TODO: Do this in the removal visitor, and
+                // instead just insert the assignments in a
+                // set here, to keep this visitor const
             } else {
                 UINFO(3, "Signal " << aliasingCandidate->name()
                                    << " is in context that does not allow aliasing");
@@ -151,7 +159,7 @@ class AliasDetectionVisitor : public VNVisitor {
             }
         }
     }
-    void visit(AstNode* nodep) override { iterateChildren(nodep); }
+    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
     static bool isLoopDriver(const std::unordered_map<Alias, Driver>& aliases, Alias aliasp) {
         Driver driverp = aliases.at(aliasp);
@@ -163,13 +171,16 @@ class AliasDetectionVisitor : public VNVisitor {
         return true;
     }
 
-    static std::unordered_map<Alias, Driver>
-    preserveLoopDrivers(const std::unordered_map<Alias, Driver>& allAliases,
-                        const std::unordered_set<Alias>& ineligibleVars) {
+    static AliasMaps preserveLoopDrivers(
+        const std::unordered_map<Alias, Driver>& allAliases,
+        const std::unordered_map<Alias, std::vector<AstNodeAssign*>>& aliasingAssignments,
+        const std::unordered_set<Alias>& ineligibleVars) {
         // TODO: Bandaid fix for t_func_public: Aliases can turn out as ineligible after having
         // been added to the map already, so remove them afterwards
         // -> Could this cause a cascade that needs to be followed?
         std::unordered_map<Alias, Driver> aliasesWithoutIneligibleVars = allAliases;
+        std::unordered_map<Alias, std::vector<AstNodeAssign*>>
+            aliasingAssignmentsWithoutIneligibleVars = aliasingAssignments;
         for (const std::pair<Alias, Driver> aliasAndDriver : allAliases) {
             const Alias aliasp = aliasAndDriver.first;
             if (ineligibleVars.find(aliasp) != ineligibleVars.end()) {
@@ -177,10 +188,14 @@ class AliasDetectionVisitor : public VNVisitor {
                                            << aliasesWithoutIneligibleVars.at(aliasp)->name()
                                            << " because it is ineligible");
                 aliasesWithoutIneligibleVars.erase(aliasesWithoutIneligibleVars.find(aliasp));
+                aliasingAssignmentsWithoutIneligibleVars.erase(
+                    aliasingAssignmentsWithoutIneligibleVars.find(aliasp));
             }
         }
 
         std::unordered_map<Alias, Driver> aliasesWithoutLoopDrivers = aliasesWithoutIneligibleVars;
+        std::unordered_map<Alias, std::vector<AstNodeAssign*>>
+            aliasingAssignmentsWithoutLoopDrivers = aliasingAssignmentsWithoutIneligibleVars;
         for (const std::pair<Alias, Driver> aliasAndDriver : aliasesWithoutIneligibleVars) {
             const Alias aliasp = aliasAndDriver.first;
             if (isLoopDriver(aliasesWithoutLoopDrivers, aliasp)) {
@@ -188,24 +203,29 @@ class AliasDetectionVisitor : public VNVisitor {
                                              << aliasesWithoutLoopDrivers.at(aliasp)->name()
                                              << " because it is part of a loop");
                 aliasesWithoutLoopDrivers.erase(aliasesWithoutLoopDrivers.find(aliasp));
+                aliasingAssignmentsWithoutLoopDrivers.erase(
+                    aliasingAssignmentsWithoutLoopDrivers.find(aliasp));
             }
         }
 
-        return aliasesWithoutLoopDrivers;
+        return {aliasesWithoutLoopDrivers, aliasingAssignmentsWithoutLoopDrivers};
     }
 
 public:
-    AliasDetectionVisitor(AstNetlist* rootp) { iterate(rootp); }
-    static std::unordered_map<Alias, Driver> findAliases(AstNetlist* rootp) {
+    AliasDetectionVisitor(AstNetlist* rootp) { iterateConst(rootp); }
+    static AliasMaps findAliases(AstNetlist* rootp) {
         AliasDetectionVisitor visitor{rootp};
         const std::unordered_map<Alias, Driver> allAliases = visitor.m_aliases;
+        const std::unordered_map<Alias, std::vector<AstNodeAssign*>> aliasingAssignments
+            = visitor.m_aliasingAssignments;
         const std::unordered_set<Alias> ineligibleVars = visitor.m_multiDrivenVars;
-        return preserveLoopDrivers(allAliases, ineligibleVars);
+        return preserveLoopDrivers(allAliases, aliasingAssignments, ineligibleVars);
     }
 };
 
 class AliasReplacementVisitor : public VNVisitor {
-    const std::unordered_map<Alias, Driver> m_aliases;
+    const std::unordered_map<Alias, Driver>& m_aliases;
+    const std::unordered_map<Alias, std::vector<AstNodeAssign*>>& m_aliasingAssignments;
     std::unordered_map<AliasVarp, DriverVarp> m_aliasVarps;
     void visit(AstVarRef* nodep) override {
         checkNoChildren(nodep);
@@ -220,7 +240,8 @@ class AliasReplacementVisitor : public VNVisitor {
             pushDeletep(nodep);
         }
     }
-    void visit(AstVarScope* nodep) {
+
+    void visit(AstVarScope* nodep) override {
         checkNoChildren(nodep);
         if (m_aliases.find(nodep) != m_aliases.end()) {
             // TODO: Must (somehow) ensure that nothing still points to this scope
@@ -233,6 +254,17 @@ class AliasReplacementVisitor : public VNVisitor {
     }
 
     void visit(AstNode* nodep) override { iterateChildren(nodep); }
+
+    void eraseAliasingAssingments() {
+        for (const std::pair<Alias const, std::vector<AstNodeAssign*>>& aliasAndAssignments :
+             m_aliasingAssignments) {
+            const std::vector<AstNodeAssign*>& assignments = aliasAndAssignments.second;
+            for (AstNodeAssign* const assignment : assignments) {
+                UINFO(3, "Removing aliasing assignment " << assignment->name());
+                pushDeletep(assignment->unlinkFrBack());
+            }
+        }
+    }
 
     void propagatePublicToDrivers(AliasVarp aliasVarp) {
         std::unordered_set<DriverVarp> visited;
@@ -264,8 +296,9 @@ class AliasReplacementVisitor : public VNVisitor {
     }
 
 public:
-    AliasReplacementVisitor(AstNetlist* rootp, const std::unordered_map<Alias, Driver> aliases)
-        : m_aliases(aliases) {
+    AliasReplacementVisitor(AstNetlist* rootp, const AliasMaps& aliasMaps)
+        : m_aliases(aliasMaps.aliases)
+        , m_aliasingAssignments(aliasMaps.aliasingAssignments) {
         for (const std::pair<Alias, Driver> aliasAndDriver : m_aliases) {
             AstVar* aliasVarp = aliasAndDriver.first->varp();
             AstVar* driverVarp = aliasAndDriver.second->varp();
@@ -273,24 +306,24 @@ public:
             m_aliasVarps[aliasVarp] = driverVarp;
         }
         ensureDriversPublic();
+        eraseAliasingAssingments();
         iterate(rootp);
     }
-    static void replacePublicAliasesWithDrivers(AstNetlist* rootp,
-                                                const std::unordered_map<Alias, Driver> aliases) {
-        AliasReplacementVisitor{rootp, aliases};
+    static void replacePublicAliasesWithDrivers(AstNetlist* rootp, const AliasMaps& aliasMaps) {
+        AliasReplacementVisitor{rootp, aliasMaps};
     }
 };
 
 void V3Alias::removePublicAliases(AstNetlist* rootp) {
-    const std::unordered_map<Alias, Driver> aliases = AliasDetectionVisitor::findAliases(rootp);
+    const AliasMaps aliasMaps = AliasDetectionVisitor::findAliases(rootp);
 
-    for (const std::pair<Alias, Driver> aliasAndDriver : aliases) {
+    for (const std::pair<Alias, Driver> aliasAndDriver : aliasMaps.aliases) {
         const Alias aliasp = aliasAndDriver.first;
         const Alias driverp = aliasAndDriver.second;
         UINFO(3, "Found alias " << aliasp->name() << " driven by " << driverp->name());
     }
 
-    AliasReplacementVisitor::replacePublicAliasesWithDrivers(rootp, aliases);
+    AliasReplacementVisitor::replacePublicAliasesWithDrivers(rootp, aliasMaps);
 
     V3Global::dumpCheckGlobalTree("alias", 0, dumpTreeEitherLevel() >= 3);
 }
