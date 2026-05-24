@@ -4,6 +4,7 @@
 #include "V3Error.h"
 
 #include <unordered_map>
+#include <unordered_set>
 
 VL_DEFINE_DEBUG_FUNCTIONS;
 
@@ -17,8 +18,11 @@ bool isAliasingAssigmnent(const AstNodeAssign* nodep) {
     const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
     // Do NOT check for public access - treat all aliases the same to allow for optimization
 
-    return !nodep->isTimingControl() && lhsp && rhsp && !lhsp->isTimingControl()
-           && !rhsp->isTimingControl() && lhsp->access().isWriteOnly()
+    return !nodep->isTimingControl() && lhsp && rhsp
+           && !lhsp->varp()
+                   ->isIO()  // Bandaid fix for t_tri_inz - TODO: Only do this for top-level ports,
+                             // or ideally find a way to alias top-level ports
+           && !lhsp->isTimingControl() && !rhsp->isTimingControl() && lhsp->access().isWriteOnly()
            && rhsp->access().isReadOnly();
 }
 
@@ -43,7 +47,7 @@ class AliasDetectionVisitor : public VNVisitor {
         iterateChildren(nodep);
     }
 
-    void visit(AstCFunc* nodep) {  // Bandaid fix: Resolves t_func_public
+    void visit(AstCFunc* nodep) {  // Bandaid fix for t_func_public
         VL_RESTORER(m_contextAllowsAliasing);
         m_contextAllowsAliasing = false;
         iterateChildren(nodep);
@@ -67,6 +71,14 @@ class AliasDetectionVisitor : public VNVisitor {
 
         if (!lhsp || !rhsp) {
             // TODO: Mark any signals on the LHS as non-eligible
+
+            if (lhsp && !rhsp)  // Signal gets a non-aliasing assignment (e.g. the result of an
+                                // addition)
+            {
+                Alias aliasingCandidate = lhsp->varScopep();
+                m_multiDrivenVars.insert(
+                    aliasingCandidate);  // TODO: Better naming - means ineligible here
+            }
 
             // WIP: Special case workaround for AstNodeSel*
             const AstNodeSel* lhsNodep = VN_CAST(nodep->lhsp(), NodeSel);
@@ -152,9 +164,24 @@ class AliasDetectionVisitor : public VNVisitor {
     }
 
     static std::unordered_map<Alias, Driver>
-    preserveLoopDrivers(const std::unordered_map<Alias, Driver>& allAliases) {
-        std::unordered_map<Alias, Driver> aliasesWithoutLoopDrivers = allAliases;
+    preserveLoopDrivers(const std::unordered_map<Alias, Driver>& allAliases,
+                        const std::unordered_set<Alias>& ineligibleVars) {
+        // TODO: Bandaid fix for t_func_public: Aliases can turn out as ineligible after having
+        // been added to the map already, so remove them afterwards
+        // -> Could this cause a cascade that needs to be followed?
+        std::unordered_map<Alias, Driver> aliasesWithoutIneligibleVars = allAliases;
         for (const std::pair<Alias, Driver> aliasAndDriver : allAliases) {
+            const Alias aliasp = aliasAndDriver.first;
+            if (ineligibleVars.find(aliasp) != ineligibleVars.end()) {
+                UINFO(3, "Removing alias " << aliasp->name() << " driven by "
+                                           << aliasesWithoutIneligibleVars.at(aliasp)->name()
+                                           << " because it is ineligible");
+                aliasesWithoutIneligibleVars.erase(aliasesWithoutIneligibleVars.find(aliasp));
+            }
+        }
+
+        std::unordered_map<Alias, Driver> aliasesWithoutLoopDrivers = aliasesWithoutIneligibleVars;
+        for (const std::pair<Alias, Driver> aliasAndDriver : aliasesWithoutIneligibleVars) {
             const Alias aliasp = aliasAndDriver.first;
             if (isLoopDriver(aliasesWithoutLoopDrivers, aliasp)) {
                 UINFO(3, "Preserving alias " << aliasp->name() << " driven by "
@@ -170,9 +197,10 @@ class AliasDetectionVisitor : public VNVisitor {
 public:
     AliasDetectionVisitor(AstNetlist* rootp) { iterate(rootp); }
     static std::unordered_map<Alias, Driver> findAliases(AstNetlist* rootp) {
-        const std::unordered_map<Alias, Driver> allAliases
-            = AliasDetectionVisitor{rootp}.m_aliases;
-        return preserveLoopDrivers(allAliases);
+        AliasDetectionVisitor visitor{rootp};
+        const std::unordered_map<Alias, Driver> allAliases = visitor.m_aliases;
+        const std::unordered_set<Alias> ineligibleVars = visitor.m_multiDrivenVars;
+        return preserveLoopDrivers(allAliases, ineligibleVars);
     }
 };
 
