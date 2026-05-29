@@ -203,8 +203,8 @@ class AliasDetectionVisitor : public VNVisitorConst {
                                              << aliasesWithoutLoopDrivers.at(aliasp)->name()
                                              << " because it is part of a loop");
                 aliasesWithoutLoopDrivers.erase(aliasesWithoutLoopDrivers.find(aliasp));
-                aliasingAssignmentsWithoutLoopDrivers.erase(
-                    aliasingAssignmentsWithoutLoopDrivers.find(aliasp));
+                //aliasingAssignmentsWithoutLoopDrivers.erase(
+                //    aliasingAssignmentsWithoutLoopDrivers.find(aliasp));
             }
         }
 
