@@ -71,6 +71,18 @@ class AliasDetectionVisitor : public VNVisitorConst {
         iterateChildrenConst(nodep);
     }
 
+    void visit(AstVarScope* nodep) override {
+        // NOTE: This only works for trivial declarations (e.g. wire #5 a), not for assignments
+        // during declaration (e.g. wire #5 a = b). Those are caught by the AstNodeAssign visitor.
+        if (nodep->varp()->delayp()) {
+            m_multiDrivenVars.insert(nodep);
+            UINFO(3, "Signal " << nodep->name() << " has delay, marking as ineligible");
+        } else {
+            UINFO(3, "Signal " << nodep->name() << " has no delay.");
+        }
+        iterateChildrenConst(nodep);
+    }
+
     void visit(AstNodeAssign* nodep) override {
         const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
         const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
@@ -96,6 +108,7 @@ class AliasDetectionVisitor : public VNVisitorConst {
                 aliasingCandidate);  // TODO: Better naming - means ineligible here
             if (m_aliases.find(aliasingCandidate) != m_aliases.end())
                 m_aliases.erase(m_aliases.find(aliasingCandidate));
+            iterateChildrenConst(nodep);
             return;
         }
 
@@ -121,7 +134,8 @@ class AliasDetectionVisitor : public VNVisitorConst {
         }
 
         // TODO: If non-aliasing assignment (or in context that doesn't allow aliasing),
-        // immediately put it into the non-eligible category Else it could happen that one aliasing
+        // immediately put the lhs into the non-eligible category
+        // Else it could happen that one aliasing
         // assignment is picked even though there are several non-aliasing assignments
         if (isAliasingAssigmnent(nodep)
             && m_multiDrivenVars.find(aliasingCandidate) == m_multiDrivenVars.end()) {
@@ -158,6 +172,7 @@ class AliasDetectionVisitor : public VNVisitorConst {
                                          // something like 'm_NotAliasingEligible'
             }
         }
+        iterateChildrenConst(nodep);
     }
     void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
 
