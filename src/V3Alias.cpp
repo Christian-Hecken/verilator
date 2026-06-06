@@ -283,7 +283,9 @@ class AliasReplacementVisitor : public VNVisitor {
              m_aliasingAssignments) {
             const std::vector<AstNodeAssign*>& assignments = aliasAndAssignments.second;
             for (AstNodeAssign* const assignment : assignments) {
-                UINFO(3, "Removing aliasing assignment " << assignment->name());
+                UINFO(3, "Removing aliasing assignment from " << assignment->rhsp()->name()
+                                                              << " to "
+                                                              << assignment->lhsp()->name());
                 pushDeletep(assignment->unlinkFrBack());
             }
         }
