@@ -76,9 +76,9 @@ class AliasDetectionVisitor : public VNVisitorConst {
         // during declaration (e.g. wire #5 a = b). Those are caught by the AstNodeAssign visitor.
         if (nodep->varp()->delayp()) {
             m_multiDrivenVars.insert(nodep);
-            UINFO(3, "Signal " << nodep->name() << " has delay, marking as ineligible");
+            //UINFO(3, "Signal " << nodep->name() << " has delay, marking as ineligible");
         } else {
-            UINFO(3, "Signal " << nodep->name() << " has no delay.");
+            //UINFO(3, "Signal " << nodep->name() << " has no delay.");
         }
         iterateChildrenConst(nodep);
     }
@@ -258,7 +258,8 @@ class AliasReplacementVisitor : public VNVisitor {
             AstVarScope* driverScopep = m_aliases.at(aliasingCandidate);
             AstVarRef* driverp
                 = new AstVarRef(driverScopep->fileline(), driverScopep, nodep->access());
-            UINFO(3, "Replacing alias " << nodep->name() << " with driver " << driverp->name());
+            UINFO(3, nodep->fileline() << "Replacing alias " << nodep->name() << " with driver "
+                                       << driverp->name());
             nodep->replaceWith(driverp);
             pushDeletep(nodep);
         }
@@ -283,9 +284,9 @@ class AliasReplacementVisitor : public VNVisitor {
              m_aliasingAssignments) {
             const std::vector<AstNodeAssign*>& assignments = aliasAndAssignments.second;
             for (AstNodeAssign* const assignment : assignments) {
-                UINFO(3, "Removing aliasing assignment from " << assignment->rhsp()->name()
-                                                              << " to "
-                                                              << assignment->lhsp()->name());
+                UINFO(3, assignment->fileline()
+                             << "Removing aliasing assignment from " << assignment->rhsp()->name()
+                             << " to " << assignment->lhsp()->name());
                 pushDeletep(assignment->unlinkFrBack());
             }
         }
