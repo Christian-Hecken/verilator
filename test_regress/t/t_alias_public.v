@@ -1,69 +1,50 @@
-module t;
+module t (
+    input clk_i
+    , output logic s_external_irq_o
+);
 
-  // True aliases
-  wire alias0  /*verilator public_flat_rw*/;
-  wire driver0;
-  assign alias0 = driver0;
-  bit alias1  /*verilator public_flat_rw*/;
-  bit driver1;
+  logic [31:0] addr_lo;
+  logic [31:0] data_lo;
+
+  localparam plic_els_lp = 2;
+  localparam lg_plic_els_lp = 3;
+  logic [plic_els_lp-1:0] plic_n, plic_r;
+  wire [lg_plic_els_lp-1:0] plic_addr_li = addr_lo[3+:lg_plic_els_lp];
+
   always_comb begin
-    alias1 = driver1;
+    plic_n = plic_r;
+    plic_n[plic_addr_li[0]] = data_lo[0];
   end
 
-  wire chainDriver;
-  wire chainAlias0;
-  wire chainAlias1;
-  wire chainAlias2  /*verilator public_flat_rw*/;
-  assign chainAlias0 = chainDriver;
-  assign chainAlias1 = chainAlias0;
-  assign chainAlias2 = chainAlias1;
+  bsg_dff_reset_en #(
+      .width_p(plic_els_lp)
+  ) plic_reg (
+        .clk_i (clk_i)
+      , .data_i(plic_n)
+      , .data_o(plic_r)
+  );
+  assign s_external_irq_o = plic_r[1];
 
-  wire cycle0;
-  wire cycle1;
-  wire cycle2  /*verilator public_flat_rw*/;
-  assign cycle0 = cycle1;
-  assign cycle1 = cycle2;
-  assign cycle2 = cycle0;
+endmodule
 
-  // Not aliases
-  //wire assignmentMultiDriven;
-  wire multiDriver0;
-  wire multiDriver1;
-  //assign assignmentMultiDriven = multiDriver0;
-  // TODO: This gets eliminated by V3Tristate
-  //assign assignmentMultiDriven = multiDriver1;
 
-  /* verilator lint_off MULTIDRIVEN */
-  bit  alwaysMultiDriven;
-  always_comb begin
-    alwaysMultiDriven = multiDriver0;
+
+
+
+module bsg_dff_reset_en #(
+    parameter width_p = 32
+) (
+    input clk_i
+    , input [width_p-1:0] data_i
+    , output logic [width_p-1:0] data_o
+);
+
+  logic [width_p-1:0] data_r;
+
+  assign data_o = data_r;
+
+  always_ff @(posedge clk_i) begin
+    data_r <= data_i;
   end
-  always_comb begin
-    alwaysMultiDriven = multiDriver1;
-  end
-  /* verilator lint_on MULTIDRIVEN */
-
-  logic clockedDriven;
-  wire  clk;
-  always @(posedge clk) clockedDriven = driver0;
-
-  logic delayDriven;
-  always_comb begin
-    delayDriven = #1 driver0;
-  end
-
-  logic onceDriven;
-  initial begin
-    onceDriven = driver0;
-  end
-
-  wire arrayDriver0[31:0];
-  wire arrayDriver1[15:0];
-  wire partiallyDriven0[15:0];
-  wire partiallyDriven1[31:0];
-  wire partiallyDriven2[15:0];
-  assign partiallyDriven0[15:0] = arrayDriver0[15:0];
-  assign partiallyDriven1[15:0] = arrayDriver1;
-  assign partiallyDriven2 = arrayDriver0[15:0];
 
 endmodule
