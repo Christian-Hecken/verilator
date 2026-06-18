@@ -98,11 +98,21 @@ class AliasDetectionVisitor : public VNVisitorConst {
                     aliasingCandidate);  // TODO: Better naming - means ineligible here
             }
 
-            // WIP: Special case workaround for AstNodeSel*
-            const AstNodeSel* lhsNodep = VN_CAST(nodep->lhsp(), NodeSel);
-            if (!lhsNodep) return;
+            // Special case workaround for AstSel*
+            const AstSel* lhsNodep = VN_CAST(nodep->lhsp(), Sel);
+            if (!lhsNodep) {
+                VL_RESTORER(m_contextAllowsAliasing);
+                m_contextAllowsAliasing = false;
+                iterateChildrenConst(nodep);
+                return;
+            }
             const AstVarRef* lhsRefp = VN_CAST(lhsNodep->fromp(), VarRef);
-            if (!lhsRefp) return;
+            if (!lhsRefp) {
+                VL_RESTORER(m_contextAllowsAliasing);
+                m_contextAllowsAliasing = false;
+                iterateChildrenConst(nodep);
+                return;
+            }
             Alias aliasingCandidate = lhsRefp->varScopep();
             m_multiDrivenVars.insert(
                 aliasingCandidate);  // TODO: Better naming - means ineligible here

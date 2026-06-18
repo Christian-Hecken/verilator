@@ -57,8 +57,13 @@ module t;
     onceDriven = driver0;
   end
 
-  wire arrayDriver[31:0];
-  wire partiallyDriven[15:0];
-  assign partiallyDriven[15:0] = arrayDriver[15:0];
+  wire arrayDriver0[31:0];
+  wire arrayDriver1[15:0];
+  wire partiallyDriven0[15:0];
+  wire partiallyDriven1[31:0];
+  wire partiallyDriven2[15:0];
+  assign partiallyDriven0[15:0] = arrayDriver0[15:0];
+  assign partiallyDriven1[15:0] = arrayDriver1;
+  assign partiallyDriven2 = arrayDriver0[15:0];
 
 endmodule
