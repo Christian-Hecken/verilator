@@ -151,10 +151,6 @@ class AliasDetectionVisitor : public VNVisitorConst {
             return;
         }
 
-        // TODO: If non-aliasing assignment (or in context that doesn't allow aliasing),
-        // immediately put the lhs into the non-eligible category
-        // Else it could happen that one aliasing
-        // assignment is picked even though there are several non-aliasing assignments
         if (isAliasingAssigmnent(nodep)
             && m_multiDrivenVars.find(aliasingCandidate) == m_multiDrivenVars.end()) {
             Driver previousDriver = [this, aliasingCandidate]() {
@@ -189,6 +185,11 @@ class AliasDetectionVisitor : public VNVisitorConst {
                     aliasingCandidate);  // TODO: Rename m_multiDrivenVars into
                                          // something like 'm_NotAliasingEligible'
             }
+        } else {  // Prevent future assignments from believing they are aliasing assignments
+            UINFO(3, "Assignment from " << rhsp->name() << " to " << lhsp->name()
+                                        << " is not an aliasing assignment, marking lhs "
+                                        << lhsp->name() << " as ineligible for aliasing");
+            m_multiDrivenVars.insert(aliasingCandidate);
         }
         iterateChildrenConst(nodep);
     }
