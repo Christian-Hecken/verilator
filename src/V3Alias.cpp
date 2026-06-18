@@ -129,14 +129,6 @@ class AliasDetectionVisitor : public VNVisitorConst {
         Alias aliasingCandidate = lhsp->varScopep();
         Driver currentDriver = rhsp->varScopep();
 
-        if (nodep->isTimingControl()) {
-            UINFO(3, "Assignment from " << rhsp->name() << " to " << lhsp->name()
-                                        << " has timing control, marking " << lhsp->name()
-                                        << " as ineligible for aliasing");
-            m_multiDrivenVars.insert(
-                aliasingCandidate);  // TODO: Better naming - means ineligible here
-        }
-
         const auto isVirtualInterface = [](AstVarScope* varScopep) {
             AstIfaceRefDType* const ifaceRefp
                 = VN_CAST(varScopep->varp()->dtypep()->skipRefp(), IfaceRefDType);
