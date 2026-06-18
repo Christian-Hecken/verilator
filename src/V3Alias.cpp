@@ -22,8 +22,12 @@ bool isAliasingAssigmnent(const AstNodeAssign* nodep) {
            && !lhsp->varp()
                    ->isIO()  // Bandaid fix for t_tri_inz - TODO: Only do this for top-level ports,
                              // or ideally find a way to alias top-level ports
-           && !lhsp->isTimingControl() && !rhsp->isTimingControl() && lhsp->access().isWriteOnly()
-           && rhsp->access().isReadOnly();
+           && !rhsp->varp()->sensIfacep() && !lhsp->varp()->sensIfacep()
+           && !lhsp->varp()->isVirtIface() && !rhsp->varp()->isVirtIface()
+           && !lhsp->varp()->isOutputter()  //
+           && !lhsp->varp()->isSc()  //
+           && !lhsp->isTimingControl() && !rhsp->isTimingControl()  //
+           && lhsp->access().isWriteOnly() && rhsp->access().isReadOnly();
 }
 
 void checkNoChildren(const AstNode* nodep) {
@@ -46,10 +50,41 @@ class AliasDetectionVisitor : public VNVisitorConst {
 
     void visit(AstAlways* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
-        if (nodep->sentreep()
+        if (!nodep->isJustOneBodyStmt() || nodep->sentreep()
             || (nodep->keyword() != VAlwaysKwd::ALWAYS_COMB
                 && nodep->keyword() != VAlwaysKwd::CONT_ASSIGN))
             m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
+    void visit(AstClocking* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
+    // Bandaid fix for data dependencies
+    void visit(AstNodeProcedure* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        if (!nodep->isJustOneBodyStmt()) m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
+    void visit(AstActive* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        if (nodep->hasClocked()) m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
+    void visit(AstCoverToggle* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
+    void visit(AstSenItem* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing = false;
         iterateChildrenConst(nodep);
     }
 
