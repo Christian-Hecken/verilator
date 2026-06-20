@@ -11,6 +11,9 @@ import vltest_bootstrap
 
 test.scenarios('simulator')
 
-test.compile(verilator_flags2=["--cc --timing --debug --debugi 0 --debugi-V3Alias 9"])
+test.compile(make_main=False,
+             verilator_flags2=["--binary --timing --debug --debugi 0 --debugi-V3Alias 9"])
+
+test.execute()
 
 test.passes()
