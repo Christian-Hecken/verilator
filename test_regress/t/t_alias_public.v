@@ -1,39 +1,69 @@
 module t;
-  bit clk_i = 1'b0;
-  bit [31:0] din;
-  wire [31:0] dout;
-  dff dff_inst (
-        .clk_i (clk_i)
-      , .data_i(din)
-      , .data_o(dout)
-  );
-  reg [31:0] foo;
-  always @(negedge clk_i) begin
-    foo <= dout;
+
+  // True aliases
+  wire alias0  /*verilator public_flat_rw*/;
+  wire driver0;
+  assign alias0 = driver0;
+  bit alias1  /*verilator public_flat_rw*/;
+  bit driver1;
+  always_comb begin
+    alias1 = driver1;
   end
 
+  wire chainDriver;
+  wire chainAlias0;
+  wire chainAlias1;
+  wire chainAlias2  /*verilator public_flat_rw*/;
+  assign chainAlias0 = chainDriver;
+  assign chainAlias1 = chainAlias0;
+  assign chainAlias2 = chainAlias1;
+
+  wire cycle0;
+  wire cycle1;
+  wire cycle2  /*verilator public_flat_rw*/;
+  assign cycle0 = cycle1;
+  assign cycle1 = cycle2;
+  assign cycle2 = cycle0;
+
+  // Not aliases
+  //wire assignmentMultiDriven;
+  wire multiDriver0;
+  wire multiDriver1;
+  //assign assignmentMultiDriven = multiDriver0;
+  // TODO: This gets eliminated by V3Tristate
+  //assign assignmentMultiDriven = multiDriver1;
+
+  /* verilator lint_off MULTIDRIVEN */
+  bit  alwaysMultiDriven;
+  always_comb begin
+    alwaysMultiDriven = multiDriver0;
+  end
+  always_comb begin
+    alwaysMultiDriven = multiDriver1;
+  end
+  /* verilator lint_on MULTIDRIVEN */
+
+  logic clockedDriven;
+  wire  clk;
+  always @(posedge clk) clockedDriven = driver0;
+
+  logic delayDriven;
+  always_comb begin
+    delayDriven = #1 driver0;
+  end
+
+  logic onceDriven;
   initial begin
-    $display("foo: %x", foo);
-    din = 32'hdeadbeef;
-    #5 clk_i = 1'b1;
-    #5 clk_i = 1'b0;
-    #5 $display("foo: %x", foo);
-    #10 $finish;
+    onceDriven = driver0;
   end
-endmodule
 
-module dff #(
-    parameter width_p = 32
-) (
-    input clk_i
-    , input [width_p-1:0] data_i
-    , output [width_p-1:0] data_o
-);
-
-  reg [width_p-1:0] data_r;
-
-  assign data_o = data_r;
-
-  always @(posedge clk_i) data_r <= data_i;
+  wire arrayDriver0[31:0];
+  wire arrayDriver1[15:0];
+  wire partiallyDriven0[15:0];
+  wire partiallyDriven1[31:0];
+  wire partiallyDriven2[15:0];
+  assign partiallyDriven0[15:0] = arrayDriver0[15:0];
+  assign partiallyDriven1[15:0] = arrayDriver1;
+  assign partiallyDriven2 = arrayDriver0[15:0];
 
 endmodule
