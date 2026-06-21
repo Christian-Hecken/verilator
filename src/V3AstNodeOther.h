@@ -1894,6 +1894,9 @@ class AstVar final : public AstNode {
     // allows them to be eliminated from simulation while redirecting VPI
     // registration to point at the alias target's storage.
     const AstVar* m_vpiAliasp = nullptr;
+    // When non-null, this public signal is computed by a generated getter helper
+    // instead of reading from C++ storage.
+    const AstCFunc* m_vpiGetterp = nullptr;
     VVarType m_varType;  // Type of variable
     VDirection m_direction;  // Direction input/output etc
     VDirection m_declDirection;  // Declared direction input/output etc
@@ -2275,6 +2278,8 @@ public:
     // Set by V3Gate when it detects a trivial pass-through assignment (assign A = B).
     const AstVar* vpiAlias() const { return m_vpiAliasp; }
     void vpiAlias(const AstVar* varp) { m_vpiAliasp = varp; }
+    const AstCFunc* vpiGetterp() const { return m_vpiGetterp; }
+    void vpiGetterp(const AstCFunc* funcp) { m_vpiGetterp = funcp; }
     VRandAttr rand() const { return m_rand; }
     string verilogKwd() const override;
     void lifetime(const VLifetime& flag) { m_lifetime = flag; }

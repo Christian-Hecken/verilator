@@ -109,6 +109,7 @@ class EmitCSyms final : EmitCBaseVisitorConst {
     // METHODS
     void emitSymHdr();
     void emitSymImpPreamble();
+    void emitComputedGetterWrappers();
     void emitScopeHier(std::vector<std::string>& stmts, bool destroy);
     void emitSymImp(const AstNetlist* netlistp);
     void emitDpiHdr();
@@ -604,6 +605,26 @@ void EmitCSyms::emitSymImpPreamble() {
     if (needsNewLine) puts("\n");
 }
 
+void EmitCSyms::emitComputedGetterWrappers() {
+    bool emittedAny = false;
+    for (const ModVarPair& mvPair : m_modVars) {
+        const AstNodeModule* const modp = mvPair.first;
+        const AstVar* const varp = mvPair.second;
+        const AstCFunc* const getterp = varp->vpiGetterp();
+        if (!getterp) continue;
+        if (!emittedAny) puts("// Computed public getter wrappers\n");
+        emittedAny = true;
+        const std::string wrapperName
+            = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp) + "__" + varp->nameProtect();
+        puts("static void " + wrapperName + "(const " + topClassName()
+             + "* vlSelf, void* datap) {\n");
+        puts("    const auto value = " + funcNameProtect(getterp, modp) + "(vlSelf);\n");
+        puts("    *reinterpret_cast<decltype(value)*>(datap) = value;\n");
+        puts("}\n");
+    }
+    if (emittedAny) puts("\n");
+}
+
 void EmitCSyms::emitScopeHier(std::vector<std::string>& stmts, bool destroy) {
     if (!v3Global.opt.vpi()) return;
 
@@ -818,27 +839,39 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             }
 
             std::string stmt;
-            stmt += protect("__Vscopep_" + svd.m_scopeName) + "->varInsert(\"";
-            stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+            stmt += protect("__Vscopep_" + svd.m_scopeName) + "->";
 
             // Use the alias target's name for the storage address expression
             const std::string varName
                 = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
                   + protect(addrVarp->name());
+            const std::string getterWrapperName = "__VvpiGetter__"
+                                                  + EmitCUtil::prefixNameProtect(svd.m_modp) + "__"
+                                                  + varp->nameProtect();
 
-            if (!varp->isParam()) {
-                stmt += ", &(";
-                stmt += varName;
-                stmt += "), false, ";
-            } else if (varp->vlEnumType() == "VLVT_STRING"
-                       && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
-                stmt += ", const_cast<void*>(static_cast<const void*>(";
-                stmt += varName;
-                stmt += ".c_str())), true, ";
+            if (varp->vpiGetterp()) {
+                stmt += "varInsertComputed(\"";
+                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+                stmt += ", const_cast<void*>(static_cast<const void*>(__Vm_modelp)), &";
+                stmt += getterWrapperName;
+                stmt += ", false, ";
             } else {
-                stmt += ", const_cast<void*>(static_cast<const void*>(&(";
-                stmt += varName;
-                stmt += "))), true, ";
+                stmt += "varInsert(\"";
+                stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
+                if (!varp->isParam()) {
+                    stmt += ", &(";
+                    stmt += varName;
+                    stmt += "), false, ";
+                } else if (varp->vlEnumType() == "VLVT_STRING"
+                           && !VN_IS(varp->subDTypep(), UnpackArrayDType)) {
+                    stmt += ", const_cast<void*>(static_cast<const void*>(";
+                    stmt += varName;
+                    stmt += ".c_str())), true, ";
+                } else {
+                    stmt += ", const_cast<void*>(static_cast<const void*>(&(";
+                    stmt += varName;
+                    stmt += "))), true, ";
+                }
             }
 
             stmt += varp->vlEnumType();  // VLVT_UINT32 etc
@@ -967,6 +1000,7 @@ void EmitCSyms::emitSymImp(const AstNetlist* netlistp) {
 
     openNewOutputSourceFile(symClassName(), true, true, "Symbol table implementation internals");
     emitSymImpPreamble();
+    emitComputedGetterWrappers();
 
     // Constructor
     const std::string ctorArgs

@@ -67,6 +67,11 @@ public:
 // Verilator variable
 // Thread safety: Assume is constructed only with model, then any number of readers
 
+#ifndef VERILATOR_VERILATED_VAR_GETTER_T
+#define VERILATOR_VERILATED_VAR_GETTER_T
+using VerilatedVarGetter = void (*)(const void* modelp, void* datap);
+#endif
+
 class VerilatedVarProps VL_NOT_FINAL {
     // TYPES
     static constexpr uint32_t MAGIC = 0xddc4f829UL;
@@ -253,23 +258,36 @@ public:
 
 class VerilatedVar final : public VerilatedVarProps {
     // MEMBERS
-    void* const m_datap;  // Location of data
+    void* const m_datap;  // Location of data or model for computed accessors
     const char* const m_namep;  // Name - slowpath
+    const VerilatedVarGetter m_getterp = nullptr;
+    mutable std::vector<QData> m_evalDatap;  // Scratch buffer for computed values
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
     // CONSTRUCTORS
     VerilatedVar(const char* namep, void* datap, VerilatedVarType vltype,
-                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam)
+                 VerilatedVarFlags vlflags, int udims, int pdims, bool isParam,
+                 VerilatedVarGetter getterp = nullptr)
         : VerilatedVarProps{vltype, vlflags, udims, pdims}
         , m_datap{datap}
         , m_namep{namep}
-        , m_isParam{isParam} {}
+        , m_getterp{getterp}
+        , m_isParam{isParam} {
+        if (m_getterp) m_evalDatap.resize(entSize());
+    }
 
 public:
     ~VerilatedVar() = default;
     // ACCESSORS
-    void* datap() const { return m_datap; }
+    void* datap() const {
+        if (VL_UNLIKELY(m_getterp)) {
+            if (VL_UNLIKELY(m_evalDatap.empty())) m_evalDatap.resize(entSize());
+            m_getterp(m_datap, m_evalDatap.data());
+            return m_evalDatap.data();
+        }
+        return m_datap;
+    }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
 };

@@ -523,15 +523,29 @@ class GateTrivialAliasReduction final {
     // STATE
     GateGraph& m_graph;
     size_t m_statAliasReduced = 0;
+    size_t m_statGetterReduced = 0;
+
+    static bool getterEligible(const AstVar* varp) {
+        const AstNodeDType* const dtypep = varp->dtypeSkipRefp();
+        return dtypep && !dtypep->isString() && !varp->isWide()
+               && !VN_IS(dtypep, UnpackArrayDType);
+    }
+
+    AstCFunc* makeGetterFunc(AstVarScope* vscp, AstNodeExpr* exprp) {
+        AstVar* const varp = vscp->varp();
+        AstScope* const scopep = vscp->scopep();
+        const AstNodeDType* const dtypep = varp->dtypeSkipRefp();
+        const std::string funcName = "__VpubGetter__" + varp->nameProtect();
+        AstCFunc* const funcp
+            = new AstCFunc{varp->fileline(), funcName, scopep, dtypep->cType("", false, false)};
+        funcp->isLoose(true);
+        funcp->dontCombine(true);
+        funcp->addStmtsp(new AstReturn{varp->fileline(), exprp->cloneTree(false)});
+        scopep->addBlocksp(funcp);
+        return funcp;
+    }
 
     void analyze() {
-        // Only alias-reduce when --public-flat-rw is active.  With that flag
-        // every signal is public for VPI access; the struct members remain but
-        // VPI registration is redirected to the canonical variable's address.
-        // Per-signal annotations (/*verilator public_flat*/, .vlt public) imply
-        // the user accesses the struct member directly from C++, and the assign
-        // must stay so the member value is kept up to date.
-        if (!v3Global.opt.publicFlatRW()) return;
         for (V3GraphVertex& vtx : m_graph.vertices()) {
             GateVarVertex* const vVtxp = vtx.cast<GateVarVertex>();
             if (!vVtxp) continue;
@@ -546,11 +560,25 @@ class GateTrivialAliasReduction final {
             GateLogicVertex* const lVtxp
                 = vVtxp->inEdges().frontp()->fromp()->as<GateLogicVertex>();
             if (!lVtxp->reducible()) continue;
-            // Check that the driver is a simple assignment whose RHS is a pure VarRef
             const GateOkVisitor okVisitor{lVtxp->nodep(), false, false};
             if (!okVisitor.isSimple()) continue;
             if (!okVisitor.varAssigned(vVtxp->varScp())) continue;
             if (okVisitor.readVscps().size() != 1) continue;  // single source
+
+            // Special case: readonly public signals can be lowered to a generated getter.
+            if (!varp->isSigUserRWPublic()) {
+                if (!getterEligible(varp)) continue;
+                AstNodeExpr* const getterExprp = okVisitor.substitutionp();
+                AstCFunc* const getterFuncp = makeGetterFunc(vVtxp->varScp(), getterExprp);
+                varp->vpiGetterp(getterFuncp);
+                varp->vpiAliasElim(true);
+                vVtxp->setReducible("PublicGetter");
+                ++m_statGetterReduced;
+                UINFO(5, "PublicGetter: " << varp->name() << " -> " << getterFuncp->name());
+                continue;
+            }
+
+            if (!v3Global.opt.publicFlatRW()) continue;
             if (!VN_IS(okVisitor.substitutionp(), VarRef)) continue;  // pure VarRef RHS
             // This is a trivial alias: assign A = B
             AstVarScope* const driverVscp = okVisitor.readVscps().front();
@@ -580,6 +608,7 @@ class GateTrivialAliasReduction final {
 
     ~GateTrivialAliasReduction() {
         V3Stats::addStat("Optimizations, Gate sigs alias-reduced (public)", m_statAliasReduced);
+        V3Stats::addStat("Optimizations, Gate sigs getter-reduced (public)", m_statGetterReduced);
     }
 
 public:
