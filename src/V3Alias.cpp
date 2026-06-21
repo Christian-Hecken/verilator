@@ -82,6 +82,12 @@ class AliasDetectionVisitor : public VNVisitorConst {
         iterateChildrenConst(nodep);
     }
 
+    void visit(AstCReset* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing = false;
+        iterateChildrenConst(nodep);
+    }
+
     void visit(AstSenItem* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
         m_contextAllowsAliasing = false;
@@ -223,7 +229,11 @@ class AliasDetectionVisitor : public VNVisitorConst {
         }
         iterateChildrenConst(nodep);
     }
-    void visit(AstNode* nodep) override { iterateChildrenConst(nodep); }
+    void visit(AstNode* nodep) override {
+        VL_RESTORER(m_contextAllowsAliasing);
+        m_contextAllowsAliasing &= !nodep->isBrancher();
+        iterateChildrenConst(nodep);
+    }
 
     static bool isLoopDriver(const std::unordered_map<Alias, Driver>& aliases, Alias aliasp) {
         Driver driverp = aliases.at(aliasp);
