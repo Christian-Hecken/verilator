@@ -14,6 +14,17 @@ import "DPI-C" context function int vpi_modify_driver();
 import "DPI-C" context function int vpi_check_modified();
 `endif
 
+// Submodule to test port aliases
+module sub (
+  input wire in_a,
+  input wire in_b,
+  output wire out_x,
+  output wire out_y
+);
+  assign out_x = in_a & in_b;
+  assign out_y = in_a | in_b;
+endmodule
+
 module t;
 
 `ifdef VERILATOR
@@ -82,9 +93,30 @@ extern "C" int vpi_check_modified();
   wire partiallyDriven0[15:0];
   wire partiallyDriven1[31:0];
   wire partiallyDriven2[15:0];
+  wire partiallyDriven3[15:0];
+  wire partiallyDriven4[15:0];
   assign partiallyDriven0[15:0] = arrayDriver0[15:0];
   assign partiallyDriven1[15:0] = arrayDriver1;
   assign partiallyDriven2 = arrayDriver0[15:0];
+
+  // Port alias testing - signals connected to submodule ports
+  wire port_in_a  /*verilator public_flat_rw*/;
+  wire port_in_b  /*verilator public_flat_rw*/;
+  wire port_out_x  /*verilator public_flat_rw*/;
+  wire port_out_y  /*verilator public_flat_rw*/;
+  
+  reg port_driver_a;
+  reg port_driver_b;
+  
+  assign port_in_a = port_driver_a;
+  assign port_in_b = port_driver_b;
+  
+  sub u_sub (
+    .in_a(port_in_a),
+    .in_b(port_in_b),
+    .out_x(port_out_x),
+    .out_y(port_out_y)
+  );
 
   // Clock generation
   initial begin
@@ -97,6 +129,8 @@ extern "C" int vpi_check_modified();
     driver0 = 0;
     driver1 = 0;
     chainDriver = 0;
+    port_driver_a = 0;
+    port_driver_b = 0;
 
     // Check initial state
     #1;
@@ -108,8 +142,10 @@ extern "C" int vpi_check_modified();
     `checkh(chainAlias1, 1'b0);
     `checkh(chainAlias2, 1'b0);
     `checkh(chainAlias2_n, 1'b1);
+    `checkh(port_out_x, 1'b0);
+    `checkh(port_out_y, 1'b0);
 
-    // VPI check initial aliases
+    // VPI check initial aliases (includes port aliases)
     if (vpi_check_aliases() != 0) $stop;
 
     // Test alias0 and its dependent
@@ -135,11 +171,41 @@ extern "C" int vpi_check_modified();
     `checkh(chainAlias2, 1'b1);
     `checkh(chainAlias2_n, 1'b0);
 
+    // Test port aliases with different input combinations
+    #10;
+    port_driver_a = 0;
+    port_driver_b = 0;
+    #1;
+    `checkh(port_in_a, 1'b0);
+    `checkh(port_in_b, 1'b0);
+    `checkh(port_out_x, 1'b0);  // 0 & 0 = 0
+    `checkh(port_out_y, 1'b0);  // 0 | 0 = 0
+
+    #10;
+    port_driver_a = 1;
+    port_driver_b = 0;
+    #1;
+    `checkh(port_in_a, 1'b1);
+    `checkh(port_in_b, 1'b0);
+    `checkh(port_out_x, 1'b0);  // 1 & 0 = 0
+    `checkh(port_out_y, 1'b1);  // 1 | 0 = 1
+
+    #10;
+    port_driver_a = 1;
+    port_driver_b = 1;
+    #1;
+    `checkh(port_in_a, 1'b1);
+    `checkh(port_in_b, 1'b1);
+    `checkh(port_out_x, 1'b1);  // 1 & 1 = 1
+    `checkh(port_out_y, 1'b1);  // 1 | 1 = 1
+
     // Toggle signals back to 0
     #10;
     driver0 = 0;
     driver1 = 0;
     chainDriver = 0;
+    port_driver_a = 0;
+    port_driver_b = 0;
     #1;
     `checkh(alias0, 1'b0);
     `checkh(alias0_n, 1'b1);
@@ -147,17 +213,25 @@ extern "C" int vpi_check_modified();
     `checkh(alias1_n, 1'b1);
     `checkh(chainAlias2, 1'b0);
     `checkh(chainAlias2_n, 1'b1);
+    `checkh(port_out_x, 1'b0);
+    `checkh(port_out_y, 1'b0);
 
-    // VPI modify driver
+    // VPI modify drivers (includes port drivers)
     #10;
     if (vpi_modify_driver() != 0) $stop;
     
-    // Wait for propagation and check
+    // Wait for propagation and check (includes port outputs)
     #1;
     if (vpi_check_modified() != 0) $stop;
     `checkh(driver0, 1'b1);
     `checkh(alias0, 1'b1);
     `checkh(alias0_n, 1'b0);
+    `checkh(port_driver_a, 1'b1);
+    `checkh(port_driver_b, 1'b1);
+    `checkh(port_in_a, 1'b1);
+    `checkh(port_in_b, 1'b1);
+    `checkh(port_out_x, 1'b1);
+    `checkh(port_out_y, 1'b1);
 
     // Multiple transitions
     #10;
