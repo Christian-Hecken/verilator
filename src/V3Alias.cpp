@@ -175,7 +175,8 @@ class AliasDetectionVisitor : public VNVisitorConst {
             UINFO(3, "Signal " << aliasingCandidate->name() << " driven by virtual interface "
                                << currentDriver->name() << ", marking as ineligible");
             m_multiDrivenVars.insert(aliasingCandidate);
-            m_aliases.erase(m_aliases.find(aliasingCandidate));
+            m_aliases.erase(aliasingCandidate);
+            m_aliasingAssignments.erase(aliasingCandidate);
             return;
         }
 
@@ -193,6 +194,7 @@ class AliasDetectionVisitor : public VNVisitorConst {
                                    << " has different driver than before, marking as ineligible");
                 m_multiDrivenVars.insert(aliasingCandidate);
                 m_aliases.erase(m_aliases.find(aliasingCandidate));
+                m_aliasingAssignments.erase(aliasingCandidate);
             } else if (m_contextAllowsAliasing) {
                 UINFO(3, "Signal " << aliasingCandidate->name()
                                    << " can be aliased, marking as alias of driver "
