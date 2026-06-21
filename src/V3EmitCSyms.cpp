@@ -523,6 +523,16 @@ class EmitCSyms final : EmitCBaseVisitorConst {
 
                               const std::string aliasBasePretty
                                   = AstNode::vpiName(VName::dehash(aliasBase));
+                              const std::string scpPretty
+                                  = AstNode::prettyName(VName::dehash(scpName));
+                              const std::string scpSym = scopeSymString(VName::dehash(scpName));
+                              if (v3Global.opt.vpi()) varHierarchyScopes(scpName);
+
+                              m_scopeNames.emplace(  //
+                                  std::piecewise_construct,  //
+                                  std::forward_as_tuple(scpSym),  //
+                                  std::forward_as_tuple(aliasp, scpSym, scpPretty, "<null>", 0,
+                                                        "SCOPE_OTHER"));
 
                               UINFO(3, "Emitting alias " << aliasp->name() << ", driven by "
                                                          << driverp->name());
