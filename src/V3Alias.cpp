@@ -288,6 +288,18 @@ class AliasReplacementVisitor : public VNVisitor {
     const std::unordered_map<Alias, Driver>& m_aliases;
     const std::unordered_map<Alias, std::vector<AstNodeAssign*>>& m_aliasingAssignments;
     std::unordered_map<AliasVarp, DriverVarp> m_aliasVarps;
+
+    void visit(AstVar* nodep) override {
+        AliasVarp aliasVarp = nodep;
+        if (m_aliasVarps.find(aliasVarp) != m_aliasVarps.end()) {
+            DriverVarp driverVarp = m_aliasVarps.at(aliasVarp);
+            UINFO(3, "Replacing alias variable " << aliasVarp->name() << " with driver variable "
+                                                 << driverVarp->name());
+            // pushDeletep(nodep->unlinkFrBack());
+            nodep->unlinkFrBack();  // TODO: Bandaid fix - Unlink without deleting to avoid
+                                    // invalidating pointers in the alias map
+        }
+    }
     void visit(AstVarRef* nodep) override {
         checkNoChildren(nodep);
         UASSERT_OBJ(nodep->varScopep(), nodep, "AstVarRef has no scope");
@@ -368,6 +380,10 @@ public:
             AstVar* driverVarp = aliasAndDriver.second->varp();
             UASSERT_OBJ(aliasVarp, aliasAndDriver.first, "AstVarScope for alias has no AstVar");
             m_aliasVarps[aliasVarp] = driverVarp;
+            // Register alias so V3EmitCSyms generates correct symbol table entries
+            UINFO(3, "Registering alias " << aliasVarp->name() << " for driver "
+                                          << driverVarp->name());
+            driverVarp->addAlias(aliasVarp);
         }
         ensureDriversPublic();
         eraseAliasingAssingments();
