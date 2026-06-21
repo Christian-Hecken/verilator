@@ -118,41 +118,42 @@ class AliasDetectionVisitor : public VNVisitorConst {
         iterateChildrenConst(nodep);
     }
 
+    void visit(AstVarRef* nodep) override {
+        if (!m_contextAllowsAliasing) {
+            UINFO(3,
+                  "Signal "
+                      << nodep->name()
+                      << " used in context that does not allow aliasing, marking as ineligible");
+            Alias aliasingCandidate = nodep->varScopep();
+            m_multiDrivenVars.insert(aliasingCandidate);
+            m_aliases.erase(aliasingCandidate);
+            m_aliasingAssignments.erase(aliasingCandidate);
+        }
+        iterateChildrenConst(nodep);
+    }
+
     void visit(AstNodeAssign* nodep) override {
         const AstVarRef* lhsp = VN_CAST(nodep->lhsp(), VarRef);
         const AstVarRef* rhsp = VN_CAST(nodep->rhsp(), VarRef);
 
-        if (!lhsp || !rhsp) {
-            // TODO: Mark any signals on the LHS as non-eligible
-
-            if (lhsp && !rhsp)  // Signal gets a non-aliasing assignment (e.g. the result of an
-                                // addition)
-            {
-                Alias aliasingCandidate = lhsp->varScopep();
-                m_multiDrivenVars.insert(
-                    aliasingCandidate);  // TODO: Better naming - means ineligible here
-            }
-
-            // Special case workaround for AstSel*
-            const AstSel* lhsNodep = VN_CAST(nodep->lhsp(), Sel);
-            if (!lhsNodep) {
-                VL_RESTORER(m_contextAllowsAliasing);
-                m_contextAllowsAliasing = false;
-                iterateChildrenConst(nodep);
-                return;
-            }
-            const AstVarRef* lhsRefp = VN_CAST(lhsNodep->fromp(), VarRef);
-            if (!lhsRefp) {
-                VL_RESTORER(m_contextAllowsAliasing);
-                m_contextAllowsAliasing = false;
-                iterateChildrenConst(nodep);
-                return;
-            }
-            Alias aliasingCandidate = lhsRefp->varScopep();
+        if (lhsp && !rhsp)  // Signal gets a non-aliasing assignment (e.g. the result of an
+                            // addition)
+        {
+            UINFO(3, "Assignment to "
+                         << lhsp->name()
+                         << " is not a simple aliasing assignment, marking as ineligible");
+            Alias aliasingCandidate = lhsp->varScopep();
             m_multiDrivenVars.insert(
                 aliasingCandidate);  // TODO: Better naming - means ineligible here
-            if (m_aliases.find(aliasingCandidate) != m_aliases.end())
-                m_aliases.erase(m_aliases.find(aliasingCandidate));
+            return;
+        }
+
+        if (!lhsp) {  // Covers AstSel*, AstConcat* etc.
+            {
+                VL_RESTORER(m_contextAllowsAliasing);
+                m_contextAllowsAliasing = false;
+                iterateChildrenConst(nodep->lhsp());
+            }
             iterateChildrenConst(nodep);
             return;
         }

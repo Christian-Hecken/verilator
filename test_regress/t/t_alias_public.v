@@ -88,16 +88,18 @@ extern "C" int vpi_check_modified();
   logic onceDriven;
   initial onceDriven = driver0;
 
-  wire arrayDriver0[31:0];
-  wire arrayDriver1[15:0];
-  wire partiallyDriven0[15:0];
-  wire partiallyDriven1[31:0];
-  wire partiallyDriven2[15:0];
-  wire partiallyDriven3[15:0];
-  wire partiallyDriven4[15:0];
+  wire [31:0]arrayDriver0;
+  wire [15:0]arrayDriver1;
+  wire [15:0]partiallyDriven0;
+  wire [31:0]partiallyDriven1;
+  wire [15:0]partiallyDriven2;
+  wire [15:0]partiallyDriven3;
+  wire [15:0]partiallyDriven4;
+  wire [15:0]partiallyDriven5;
   assign partiallyDriven0[15:0] = arrayDriver0[15:0];
   assign partiallyDriven1[15:0] = arrayDriver1;
   assign partiallyDriven2 = arrayDriver0[15:0];
+  assign {partiallyDriven3,partiallyDriven4} = arrayDriver0;
 
   // Port alias testing - signals connected to submodule ports
   wire port_in_a  /*verilator public_flat_rw*/;
