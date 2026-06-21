@@ -171,21 +171,6 @@ class AliasDetectionVisitor : public VNVisitorConst {
         Alias aliasingCandidate = lhsp->varScopep();
         Driver currentDriver = rhsp->varScopep();
 
-        const auto isVirtualInterface = [](AstVarScope* varScopep) {
-            AstIfaceRefDType* const ifaceRefp
-                = VN_CAST(varScopep->varp()->dtypep()->skipRefp(), IfaceRefDType);
-            return ifaceRefp && ifaceRefp->isVirtual();
-        };
-
-        if (isVirtualInterface(currentDriver)) {
-            UINFO(3, "Signal " << aliasingCandidate->name() << " driven by virtual interface "
-                               << currentDriver->name() << ", marking as ineligible");
-            m_multiDrivenVars.insert(aliasingCandidate);
-            m_aliases.erase(aliasingCandidate);
-            m_aliasingAssignments.erase(aliasingCandidate);
-            return;
-        }
-
         if (isAliasingAssigmnent(nodep)
             && m_multiDrivenVars.find(aliasingCandidate) == m_multiDrivenVars.end()) {
             Driver previousDriver = [this, aliasingCandidate]() {
