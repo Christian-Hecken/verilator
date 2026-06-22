@@ -47,6 +47,7 @@ class AliasDetectionVisitor : public VNVisitorConst {
     std::unordered_set<Alias> m_multiDrivenVars;
     std::unordered_map<Alias, std::vector<AstNodeAssign*>> m_aliasingAssignments;
     bool m_contextAllowsAliasing{true};
+    bool m_withinIneligibleLhs{false};
 
     void visit(AstAlways* nodep) override {
         VL_RESTORER(m_contextAllowsAliasing);
@@ -125,11 +126,10 @@ class AliasDetectionVisitor : public VNVisitorConst {
     }
 
     void visit(AstVarRef* nodep) override {
-        if (!m_contextAllowsAliasing) {
-            UINFO(3,
-                  "Signal "
-                      << nodep->name()
-                      << " used in context that does not allow aliasing, marking as ineligible");
+        if (m_withinIneligibleLhs) {
+            UINFO(3, "Signal " << nodep->name()
+                               << " used as LHS in assignment that does not allow aliasing, "
+                                  "marking as ineligible");
             Alias aliasingCandidate = nodep->varScopep();
             m_multiDrivenVars.insert(aliasingCandidate);
             m_aliases.erase(aliasingCandidate);
@@ -156,8 +156,8 @@ class AliasDetectionVisitor : public VNVisitorConst {
 
         if (!lhsp) {  // Covers AstSel*, AstConcat* etc.
             {
-                VL_RESTORER(m_contextAllowsAliasing);
-                m_contextAllowsAliasing = false;
+                VL_RESTORER(m_withinIneligibleLhs);
+                m_withinIneligibleLhs = true;
                 iterateChildrenConst(nodep->lhsp());
             }
             iterateChildrenConst(nodep);

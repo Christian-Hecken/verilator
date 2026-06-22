@@ -78,15 +78,17 @@ extern "C" int vpi_check_modified();
   always_comb alwaysMultiDriven = multiDriver1;
   /* verilator lint_on MULTIDRIVEN */
 
+  // Use alias0 as driver to ensure that it stays aliased, and only signals on the lhs inside
+  // aliasing-ineligible environments are affected
   logic clockedDriven;
   reg   clk;
-  always @(posedge clk) clockedDriven = driver0;
+  always @(posedge clk) clockedDriven = alias0;
 
   logic delayDriven;
-  always_comb delayDriven = #1 driver0;
+  always_comb delayDriven = #1 alias0;
 
   logic onceDriven;
-  initial onceDriven = driver0;
+  initial onceDriven = alias0;
 
   wire [31:0]arrayDriver0;
   wire [15:0]arrayDriver1;
