@@ -616,10 +616,11 @@ void EmitCSyms::emitComputedGetterWrappers() {
         emittedAny = true;
         const std::string wrapperName
             = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp) + "__" + varp->nameProtect();
-        puts("static void " + wrapperName + "(const " + topClassName()
-             + "* vlSelf, void* datap) {\n");
+        puts("static void " + wrapperName + "(const void* modelp, void* datap) {\n");
+        puts("    auto* vlSelf = static_cast<" + EmitCUtil::prefixNameProtect(modp)
+             + "*>(const_cast<void*>(modelp));\n");
         puts("    const auto value = " + funcNameProtect(getterp, modp) + "(vlSelf);\n");
-        puts("    *reinterpret_cast<decltype(value)*>(datap) = value;\n");
+        puts("    *static_cast<std::remove_const_t<decltype(value)>*>(datap) = value;\n");
         puts("}\n");
     }
     if (emittedAny) puts("\n");
@@ -842,9 +843,9 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             stmt += protect("__Vscopep_" + svd.m_scopeName) + "->";
 
             // Use the alias target's name for the storage address expression
-            const std::string varName
-                = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect()) + "."
-                  + protect(addrVarp->name());
+            const std::string scopeName
+                = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect());
+            const std::string varName = scopeName + "." + protect(addrVarp->name());
             const std::string getterWrapperName = "__VvpiGetter__"
                                                   + EmitCUtil::prefixNameProtect(svd.m_modp) + "__"
                                                   + varp->nameProtect();
@@ -852,7 +853,9 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             if (varp->vpiGetterp()) {
                 stmt += "varInsertComputed(\"";
                 stmt += V3OutFormatter::quoteNameControls(protect(svd.m_varBasePretty)) + '"';
-                stmt += ", const_cast<void*>(static_cast<const void*>(__Vm_modelp)), &";
+                stmt += ", const_cast<void*>(static_cast<const void*>(&";
+                stmt += scopeName;
+                stmt += ")), &";
                 stmt += getterWrapperName;
                 stmt += ", false, ";
             } else {

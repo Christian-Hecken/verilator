@@ -540,7 +540,7 @@ class GateTrivialAliasReduction final {
             = new AstCFunc{varp->fileline(), funcName, scopep, dtypep->cType("", false, false)};
         funcp->isLoose(true);
         funcp->dontCombine(true);
-        funcp->addStmtsp(new AstReturn{varp->fileline(), exprp->cloneTree(false)});
+        funcp->addStmtsp(new AstCReturn{varp->fileline(), exprp->cloneTree(false)});
         scopep->addBlocksp(funcp);
         return funcp;
     }
