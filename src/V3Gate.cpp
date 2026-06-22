@@ -167,8 +167,11 @@ public:
             }
             if (vscp->varp()->isSigPublic()) {
                 // Public signals shouldn't be changed, pli code might be messing with them
-                vVtxp->clearReducibleAndDedupable("SigPublic");
-                vVtxp->setConsumed("SigPublic");
+                // Exception: signals with getter functions can be optimized
+                if (!vscp->varp()->vpiGetterp()) {
+                    vVtxp->clearReducibleAndDedupable("SigPublic");
+                    vVtxp->setConsumed("SigPublic");
+                }
             }
             if (vscp->varp()->isIO() && vscp->scopep()->isTop()) {
                 // We may need to convert to/from sysc/reg sigs
