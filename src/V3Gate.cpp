@@ -538,7 +538,8 @@ class GateTrivialAliasReduction final {
         AstVar* const varp = vscp->varp();
         AstScope* const scopep = vscp->scopep();
         const AstNodeDType* const dtypep = varp->dtypeSkipRefp();
-        const std::string funcName = "__VpubGetter__" + varp->nameProtect();
+        const std::string funcName
+            = "__VpubGetter__" + scopep->nameDotless() + "__" + varp->nameProtect();
         AstCFunc* const funcp
             = new AstCFunc{varp->fileline(), funcName, scopep, dtypep->cType("", false, false)};
         funcp->isLoose(true);
@@ -558,15 +559,21 @@ class GateTrivialAliasReduction final {
             // (e.g. hierarchical block ports) -- those are functionally needed.
             if (!varp->isSigUserRdPublic()) continue;
             if (vVtxp->reducible()) continue;  // was not blocked
+
+            // Must have one or more drivers
+            if (vVtxp->inEmpty()) continue;
+            /* TODO: For aliasing, must use this condition instead
             // Must have exactly one driver
             if (!vVtxp->inSize1()) continue;
+            */
             GateLogicVertex* const lVtxp
                 = vVtxp->inEdges().frontp()->fromp()->as<GateLogicVertex>();
             if (!lVtxp->reducible()) continue;
             const GateOkVisitor okVisitor{lVtxp->nodep(), false, false};
             if (!okVisitor.isSimple()) continue;
             if (!okVisitor.varAssigned(vVtxp->varScp())) continue;
-            if (okVisitor.readVscps().size() != 1) continue;  // single source
+            // TODO: Need to restore this restriction for Aliasing
+            // if (okVisitor.readVscps().size() != 1) continue;  // single source
 
             // Special case: readonly public signals can be lowered to a generated getter.
             if (!varp->isSigUserRWPublic()) {
@@ -581,6 +588,8 @@ class GateTrivialAliasReduction final {
                 continue;
             }
 
+            continue;  // TODO: Modified requirements allow remat, but are too permissive for
+                       // aliasing
             if (!v3Global.opt.publicFlatRW()) continue;
             if (!VN_IS(okVisitor.substitutionp(), VarRef)) continue;  // pure VarRef RHS
             // This is a trivial alias: assign A = B
@@ -1388,6 +1397,11 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
         // Re-enable gate reduction for trivially-aliased public signals (assign A = B).
         // Must run before GateInline so the re-enabled vars are eligible for inlining.
         GateTrivialAliasReduction::apply(*graphp);
+
+        // Rebuild graph to include getter function bodies for optimization
+        graphp.reset();  // Destroy old graph first to release AstUser state
+        graphp = GateBuildVisitor::apply(netlistp);
+        if (dumpGraphLevel() >= 3) graphp->dumpDotFilePrefixed("gate_graph_with_getters");
 
         // Warn, before loss of sync/async pointers
         v3GateWarnSyncAsync(*graphp);

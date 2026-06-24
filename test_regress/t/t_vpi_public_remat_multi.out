@@ -1,0 +1,2 @@
+%Error: Vt_vpi_public_remat_multi__Syms__.*\.cpp:\d+:\d+: '__VvpiGetter__Vt_vpi_public_remat_multi___024root__testbench__DOT__dma_data_ready_and_lo' was not declared in this scope
+%Error: Vt_vpi_public_remat_multi__Syms__.*\.cpp:\d+:\d+: '__VvpiGetter__Vt_vpi_public_remat_multi___024root__testbench__DOT__dma_data_v_li' was not declared in this scope

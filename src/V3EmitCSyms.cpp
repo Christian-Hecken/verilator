@@ -455,6 +455,36 @@ void EmitCSyms::emitSymHdr() {
         for (const std::string& type : types) puts(type);
     }
 
+    // Forward declarations for VPI getter wrappers and their underlying getter functions
+    if (!m_scopeVars.empty()) {
+        puts("\n// VPI GETTER WRAPPER FORWARD DECLARATIONS\n");
+        std::set<std::string> emittedWrappers;
+        std::set<std::string> emittedGetters;
+        for (const auto& itpair : m_scopeVars) {
+            const ScopeVarData& svd = itpair.second;
+            const AstVar* const varp = svd.m_varp;
+            const AstCFunc* const getterp = varp->vpiGetterp();
+            if (!getterp) continue;
+            const AstNodeModule* const modp = svd.m_modp;
+            const AstScope* const scopep = svd.m_scopep;
+            
+            // Forward declare the actual getter function
+            const std::string getterName = funcNameProtect(getterp, modp);
+            if (emittedGetters.insert(getterName).second) {
+                puts(getterp->rtnTypeVoid() + " " + getterName + "(" 
+                     + EmitCUtil::prefixNameProtect(modp) + "* vlSelf);\n");
+            }
+            
+            // Forward declare the wrapper function
+            const std::string wrapperName = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp)
+                                            + "__" + scopep->nameDotless() + "__"
+                                            + varp->nameProtect();
+            if (emittedWrappers.insert(wrapperName).second) {
+                puts("void " + wrapperName + "(const void* modelp, void* datap);\n");
+            }
+        }
+    }
+
     puts("\n// SYMS CLASS (contains all model state)\n");
     puts("class alignas(VL_CACHE_LINE_BYTES) " + symClassName()
          + " final : public VerilatedSyms {\n");
@@ -607,16 +637,22 @@ void EmitCSyms::emitSymImpPreamble() {
 
 void EmitCSyms::emitComputedGetterWrappers() {
     bool emittedAny = false;
-    for (const ModVarPair& mvPair : m_modVars) {
-        const AstNodeModule* const modp = mvPair.first;
-        const AstVar* const varp = mvPair.second;
+    // Iterate over all scope-var combinations to generate wrappers for each scope
+    for (const auto& itpair : m_scopeVars) {
+        const ScopeVarData& svd = itpair.second;
+        const AstVar* const varp = svd.m_varp;
         const AstCFunc* const getterp = varp->vpiGetterp();
         if (!getterp) continue;
         if (!emittedAny) puts("// Computed public getter wrappers\n");
         emittedAny = true;
-        const std::string wrapperName
-            = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp) + "__" + varp->nameProtect();
-        puts("static void " + wrapperName + "(const void* modelp, void* datap) {\n");
+
+        const AstNodeModule* const modp = svd.m_modp;
+        const AstScope* const scopep = svd.m_scopep;
+
+        const std::string wrapperName = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp)
+                                        + "__" + scopep->nameDotless() + "__"
+                                        + varp->nameProtect();
+        puts("void " + wrapperName + "(const void* modelp, void* datap) {\n");
         puts("    auto* vlSelf = static_cast<" + EmitCUtil::prefixNameProtect(modp)
              + "*>(const_cast<void*>(modelp));\n");
         puts("    const auto value = " + funcNameProtect(getterp, modp) + "(vlSelf);\n");
@@ -846,9 +882,9 @@ std::vector<std::string> EmitCSyms::getSymCtorStmts() {
             const std::string scopeName
                 = VIdProtect::protectIf(scopep->nameDotless(), scopep->protect());
             const std::string varName = scopeName + "." + protect(addrVarp->name());
-            const std::string getterWrapperName = "__VvpiGetter__"
-                                                  + EmitCUtil::prefixNameProtect(svd.m_modp) + "__"
-                                                  + varp->nameProtect();
+            const std::string getterWrapperName
+                = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(svd.m_modp) + "__"
+                  + scopep->nameDotless() + "__" + varp->nameProtect();
 
             if (varp->vpiGetterp()) {
                 stmt += "varInsertComputed(\"";
