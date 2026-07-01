@@ -543,6 +543,7 @@ class GateRematerialization final {
             = new AstCFunc{varp->fileline(), funcName, scopep, dtypep->cType("", false, false)};
         funcp->isLoose(true);
         funcp->dontCombine(true);
+        funcp->entryPoint(true);  // Prevent removal by V3InlineCFuncs
         funcp->addStmtsp(new AstCReturn{varp->fileline(), exprp->cloneTree(false)});
         scopep->addBlocksp(funcp);
         return funcp;
