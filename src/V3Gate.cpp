@@ -1443,10 +1443,10 @@ void V3Gate::gateAll(AstNetlist* netlistp) {
 
         // Re-enable gate reduction for public signals via rematerialization and aliasing.
         // Must run before GateInline so the re-enabled vars are eligible for inlining.
-        // First, handle readonly signals via getter functions (rematerialization)
-        GateRematerialization::apply(*graphp);
-        // Then, handle read-write signals via trivial aliasing (stricter requirements)
+        // First, handle read-write signals via trivial aliasing
         GateTrivialAliasing::apply(*graphp);
+        // Then, handle readonly signals via getter functions (rematerialization)
+        GateRematerialization::apply(*graphp);
 
         // Rebuild graph to include getter function bodies for optimization
         graphp.reset();  // Destroy old graph first to release AstUser state
