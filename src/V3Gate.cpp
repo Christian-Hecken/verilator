@@ -167,8 +167,8 @@ public:
             }
             if (vscp->varp()->isSigPublic()) {
                 // Public signals shouldn't be changed, pli code might be messing with them
-                // Exception: signals with getter functions can be optimized
-                if (!vscp->varp()->vpiGetterp()) {
+                // Exception: aliases or signals with getter functions can be optimized
+                if (!vscp->varp()->vpiAlias() && !vscp->varp()->vpiGetterp()) {
                     vVtxp->clearReducibleAndDedupable("SigPublic");
                     vVtxp->setConsumed("SigPublic");
                 }
