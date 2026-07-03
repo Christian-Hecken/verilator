@@ -467,14 +467,14 @@ void EmitCSyms::emitSymHdr() {
             if (!getterp) continue;
             const AstNodeModule* const modp = svd.m_modp;
             const AstScope* const scopep = svd.m_scopep;
-            
+
             // Forward declare the actual getter function
             const std::string getterName = funcNameProtect(getterp, modp);
             if (emittedGetters.insert(getterName).second) {
-                puts(getterp->rtnTypeVoid() + " " + getterName + "(" 
+                puts(getterp->rtnTypeVoid() + " " + getterName + "("
                      + EmitCUtil::prefixNameProtect(modp) + "* vlSelf);\n");
             }
-            
+
             // Forward declare the wrapper function
             const std::string wrapperName = "__VvpiGetter__" + EmitCUtil::prefixNameProtect(modp)
                                             + "__" + scopep->nameDotless() + "__"

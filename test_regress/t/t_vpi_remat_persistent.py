@@ -19,4 +19,3 @@ test.compile(
 test.execute(check_finished=True)
 
 test.passes()
-

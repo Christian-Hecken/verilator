@@ -38,8 +38,8 @@ extern "C" int check_remat_value(int expected) {
     vpi_get_value(s_remat_h, &actual_v);
 
     if (actual_v.value.integer != expected) {
-        VL_PRINTF("%%Error: remat value mismatch: expected %d, got %d\n",
-                  expected, actual_v.value.integer);
+        VL_PRINTF("%%Error: remat value mismatch: expected %d, got %d\n", expected,
+                  actual_v.value.integer);
         return __LINE__;
     }
 

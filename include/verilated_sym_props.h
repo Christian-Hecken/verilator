@@ -261,6 +261,7 @@ class VerilatedVar final : public VerilatedVarProps {
     void* const m_datap;  // Location of data or model for computed accessors
     const char* const m_namep;  // Name - slowpath
     const VerilatedVarGetter m_getterp = nullptr;
+
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
