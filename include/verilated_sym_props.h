@@ -272,6 +272,7 @@ class VerilatedVar final : public VerilatedVarProps {
     std::unique_ptr<const VerilatedForceControlSignals>
         m_forceControlSignals;  // Force control signals
     const VerilatedVarGetter m_getterp = nullptr;
+
 protected:
     const bool m_isParam;
     friend class VerilatedScope;

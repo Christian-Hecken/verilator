@@ -877,7 +877,7 @@ class VerilatedVpiPutHolder final {
         char init = 0;  // to ensure trivial constructor
         std::string str;
         std::vector<s_vpi_vecval> vec;
-        ~Storage() noexcept {/* handled by VerilatedVpiPutHolder */};
+        ~Storage() noexcept { /* handled by VerilatedVpiPutHolder */ };
     } m_storage{};
 
 public:
@@ -3268,7 +3268,8 @@ template <typename T>
 T vl_vpi_get_word_gen(const VerilatedVpioVarBase* vop, size_t bitCount, size_t addOffset,
                       void* overrideDatap) {
     const size_t wordBits = sizeof(T) * 8;
-    const VarAccessInfo<T> info = vl_vpi_var_access_info<T>(vop, bitCount, addOffset, overrideDatap);
+    const VarAccessInfo<T> info
+        = vl_vpi_var_access_info<T>(vop, bitCount, addOffset, overrideDatap);
     if (info.m_maskHi)
         return ((info.m_datap[info.m_wordOffset] & info.m_maskLo) >> info.m_bitOffset)
                | ((info.m_datap[info.m_wordOffset + 1] & info.m_maskHi)
@@ -3327,19 +3328,17 @@ void vl_vpi_put_word(const VerilatedVpioVar* vop, QData word, size_t bitCount, s
 
 void vl_vpi_get_value(const VerilatedVpioVarBase* vop, p_vpi_value valuep) {
     const VerilatedVar* const varp = vop->varp();
-    
+
     // Thread-local scratch buffer for rematerialization
     static thread_local std::vector<QData> t_rematScratch;
-    
+
     void* varDatap = vop->varDatap();
-    
+
     // Check if this is a rematerialized variable
     if (VL_UNLIKELY(varp->hasGetter())) {
         // Calculate required size in QData words
         const size_t words = (varp->entBits() + 63) / 64;
-        if (t_rematScratch.size() < words) {
-            t_rematScratch.resize(words);
-        }
+        if (t_rematScratch.size() < words) { t_rematScratch.resize(words); }
         // Clear the scratch buffer to prevent stale bits
         std::fill_n(t_rematScratch.data(), words, 0);
         // Call the getter to rematerialize the value
