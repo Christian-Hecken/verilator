@@ -272,7 +272,6 @@ class VerilatedVar final : public VerilatedVarProps {
     std::unique_ptr<const VerilatedForceControlSignals>
         m_forceControlSignals;  // Force control signals
     const VerilatedVarGetter m_getterp = nullptr;
-    mutable std::vector<QData> m_evalDatap;  // Scratch buffer for computed values
 protected:
     const bool m_isParam;
     friend class VerilatedScope;
@@ -291,22 +290,15 @@ protected:
         , m_datap{datap}
         , m_namep{namep}
         , m_getterp{getterp}
-        , m_isParam{isParam} {
-        if (m_getterp) m_evalDatap.resize(entSize());
-    }
+        , m_isParam{isParam} {}
 
 public:
     ~VerilatedVar();
     VerilatedVar(VerilatedVar&&);
     // ACCESSORS
-    void* datap() const {
-        if (VL_UNLIKELY(m_getterp)) {
-            if (VL_UNLIKELY(m_evalDatap.empty())) m_evalDatap.resize(entSize());
-            m_getterp(m_datap, m_evalDatap.data());
-            return m_evalDatap.data();
-        }
-        return m_datap;
-    }
+    void* datap() const { return m_datap; }
+    bool hasGetter() const { return m_getterp != nullptr; }
+    VerilatedVarGetter getterp() const { return m_getterp; }
     const char* name() const { return m_namep; }
     bool isParam() const { return m_isParam; }
     const VerilatedForceControlSignals* forceControlSignals() const {
