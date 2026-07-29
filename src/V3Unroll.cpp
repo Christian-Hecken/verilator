@@ -64,6 +64,8 @@ struct UnrollStats final {
     Stat m_nUnrolledIters{"Unrolled iterations"};
     Stat m_bitScanLowered{"Lowered priority-encoder to mostsetbitp1"};
     Stat m_countOnesLowered{"Lowered count-set-bits to countones"};
+    Stat m_nConstBindingsCreated{"Unroll const bindings created"};
+    Stat m_nBlockedByPublicRW{"Unroll const-fold blocked by public_flat_rw"};
 };
 
 //######################################################################
@@ -357,7 +359,12 @@ class UnrollOneVisitor final : VNVisitor {
         AstConst* const valp = VN_CAST(V3Const::constifyEdit(nodep->rhsp()), Const);
         if (lhsp && valp && !lhsp->varp()->isForced() && !lhsp->varp()->isSigUserRWPublic()) {
             m_bindings.set(lhsp->varScopep(), valp);
+            ++m_stats.m_nConstBindingsCreated;
             return;
+        }
+        // Count only when public_rw is the sole blocker (not forced)
+        if (lhsp && valp && !lhsp->varp()->isForced() && lhsp->varp()->isSigUserRWPublic()) {
+            ++m_stats.m_nBlockedByPublicRW;
         }
         // Otherwise just like a generic statement
         process(nodep->lhsp());
@@ -596,11 +603,17 @@ class UnrollAllVisitor final : VNVisitor {
             AstVarRef* const lhsp = VN_CAST(assignp->lhsp(), VarRef);
             if (!lhsp) break;
             // Don't bind if volatile
-            if (lhsp->varp()->isForced() || lhsp->varp()->isSigUserRWPublic()) continue;
+            if (lhsp->varp()->isForced()) continue;
             // Don't overwrite a later binding
             if (m_bindings.get(lhsp->varScopep())) continue;
+            // Count only when public_rw is the sole blocker
+            if (lhsp->varp()->isSigUserRWPublic()) {
+                ++m_stats.m_nBlockedByPublicRW;
+                continue;
+            }
             // Set up the binding
             m_bindings.set(lhsp->varScopep(), valp);
+            ++m_stats.m_nConstBindingsCreated;
         }
 
         // Recognize a bit counting loop and lower it to a builtin

@@ -26,6 +26,8 @@ class AstNetlist;
 
 class V3Dead final {
 public:
+    // Clear deduplication state at start of compilation
+    static void deadAllClear() VL_MT_DISABLED;
     // Modules, no vars/dtypes
     static void deadifyModules(AstNetlist* nodep) VL_MT_DISABLED;
     // Modules, Data types

@@ -27,6 +27,7 @@ class AstNetlist;
 class V3Life final {
 public:
     static void lifeAll(AstNetlist* nodep) VL_MT_DISABLED;
+    static void lifeAllClear() VL_MT_DISABLED;
 };
 
 #endif  // Guard

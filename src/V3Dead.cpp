@@ -45,6 +45,33 @@
 VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
+// Compilation-scoped state for deduplication across multiple V3Dead invocations
+
+class DeadGlobalState final {
+    // Track public variables already counted as blocked across all V3Dead invocations
+    // in this compilation. Uses pointer identity which is stable within one compilation
+    // and safe because state is cleared at compilation start.
+    std::unordered_set<const AstVar*> m_blockedPublicVars;
+
+public:
+    DeadGlobalState() = default;
+    ~DeadGlobalState() = default;
+    VL_UNCOPYABLE(DeadGlobalState);
+
+    bool markBlockedIfNew(const AstVar* varp) {
+        // Returns true if this is the first time we're counting this variable as blocked.
+        // Uses pointer identity: each AstVar is a distinct object during compilation,
+        // so pointer addresses uniquely identify variables without collision.
+        return m_blockedPublicVars.insert(varp).second;
+    }
+
+    void clear() { m_blockedPublicVars.clear(); }
+};
+
+// Global state for the current compilation - cleared at start of each compilation
+static DeadGlobalState s_deadGlobalState;
+
+//######################################################################
 // Dead state, as a visitor of each AstNode
 
 class DeadVisitor final : public VNVisitor {
@@ -64,8 +91,10 @@ class DeadVisitor final : public VNVisitor {
     const bool m_elimUserVars;  // Allow removal of user's vars
     const bool m_elimDTypes;  // Allow removal of DTypes
     const bool m_elimCells;  // Allow removal of Cells
+    mutable VDouble0 m_statSigPublic;  // Statistic tracking - public signals blocking elimination
     // List of all encountered to avoid another loop through tree
     std::vector<AstVar*> m_varsp;
+    std::vector<AstVar*> m_publicVarCandidateps;  // Public vars that would be eligible otherwise
     std::vector<AstNode*> m_dtypeElimsp;  // Data types might eliminate
     std::map<AstNodeDType*, AstNodeModule*> m_dtypePkgsp;  // Data type's containing package
     std::vector<AstVarScope*> m_vscsp;
@@ -85,6 +114,7 @@ class DeadVisitor final : public VNVisitor {
 
     // STATE - Statistic tracking
     VDouble0 m_statFTasksDeadified;
+    VDouble0 m_statVarsEliminated;  // Variables successfully eliminated
 
     // METHODS
 
@@ -294,10 +324,17 @@ class DeadVisitor final : public VNVisitor {
         iterateChildren(nodep);
         checkAll(nodep);
         if (m_foreachHeaderp) nodep->user1Inc();
+        // Preserve original elimination candidate logic exactly
         if (mightElimVar(nodep)) {
             m_varsp.push_back(nodep);
         } else {
+            // Original bookkeeping for non-candidates
             if (m_modp && VN_IS(m_modp, Package)) m_modp->user1Inc();
+
+            // Statistics-only observation: track public vars that would be eligible otherwise
+            if (nodep->isSigPublic() && mightElimVarIgnoringPublic(nodep)) {
+                m_publicVarCandidateps.push_back(nodep);
+            }
         }
     }
     void visit(AstNodeAssign* nodep) override {
@@ -416,11 +453,15 @@ class DeadVisitor final : public VNVisitor {
             }
         }
     }
-    bool mightElimVar(const AstVar* nodep) const {
-        if (nodep->isSigPublic()) return false;  // Can't elim publics!
+    bool mightElimVarIgnoringPublic(const AstVar* nodep) const {
+        // Check eligibility conditions unrelated to public visibility
         if (nodep->isIO() || nodep->isClassMember() || nodep->sensIfacep()) return false;
         if (nodep->isTemp() && !nodep->isTrace()) return true;
         return m_elimUserVars;  // Post-Trace can kill most anything
+    }
+    bool mightElimVar(const AstVar* nodep) const {
+        if (nodep->isSigPublic()) return false;
+        return mightElimVarIgnoringPublic(nodep);
     }
 
     void deadCheckScope() {
@@ -491,12 +532,23 @@ class DeadVisitor final : public VNVisitor {
                 AstVar* const varp = *it;
                 if (!varp) continue;
                 if (varp->user1() == 0) {
+                    // Variables in m_varsp are already eligible (passed mightElimVar)
                     UINFO(4, "  Dead " << varp);
                     if (varp->dtypep()) varp->dtypep()->user1Inc(-1);
                     deleting(varp);
                     *it = nullptr;
                     retry = true;
+                    ++m_statVarsEliminated;
                 }
+            }
+        }
+        // Statistics-only: count public variables that would be eligible otherwise
+        // Deduplicate across all V3Dead invocations in this compilation
+        for (AstVar* const varp : m_publicVarCandidateps) {
+            if (varp->user1() == 0) {
+                // Dead reference count, eligible except for public visibility
+                // Only count each unique variable once across all passes
+                if (s_deadGlobalState.markBlockedIfNew(varp)) { ++m_statSigPublic; }
             }
         }
         for (std::vector<AstNode*>::iterator it = m_dtypeElimsp.begin(); it != m_dtypeElimsp.end();
@@ -601,11 +653,19 @@ public:
     }
     ~DeadVisitor() override {
         V3Stats::addStatSum("Optimizations, deadified FTasks", m_statFTasksDeadified);
+        V3Stats::addStatSum("Optimizations, Dead variables eliminated", m_statVarsEliminated);
+        V3Stats::addStatSum("Optimizations, Dead variables blocked by public", m_statSigPublic);
     };
 };
 
 //######################################################################
 // Dead class functions
+
+void V3Dead::deadAllClear() {
+    // Clear deduplication state at start of compilation
+    // Called once before any V3Dead pass invocations
+    s_deadGlobalState.clear();
+}
 
 void V3Dead::deadifyModules(AstNetlist* nodep) {
     UINFO(2, __FUNCTION__ << ":");

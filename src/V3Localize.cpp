@@ -56,6 +56,7 @@ class LocalizeVisitor final : public VNVisitor {
     // STATE - across all visitors
     std::vector<AstVarScope*> m_varScopeps;  // List of variables to consider for localization
     VDouble0 m_statLocVars;  // Statistic tracking
+    VDouble0 m_statSigPublic;  // Statistic tracking - public signals blocking localization
 
     // STATE - for current visit position (use VL_RESTORER)
     AstCFunc* m_cfuncp = nullptr;  // Current active function
@@ -99,6 +100,12 @@ class LocalizeVisitor final : public VNVisitor {
             // functions might be calling another, which the current analysis
             // cannot cope with. This should be rare (introduced by V3Depth).
             if (funcps.size() > 1 && existsNonLeaf(funcps)) continue;
+
+            // All non-public conditions passed - check public status
+            if (nodep->varp()->isSigPublic()) {
+                ++m_statSigPublic;
+                continue;
+            }
 
             UINFO(4, "Localizing " << nodep);
             ++m_statLocVars;
@@ -185,7 +192,6 @@ class LocalizeVisitor final : public VNVisitor {
 
     void visit(AstVarScope* nodep) override {
         if (!nodep->varp()->isPrimaryIO()  // Not an IO the user wants to interact with
-            && !nodep->varp()->isSigPublic()  // Not something the user wants to interact with
             && !nodep->varp()->isFuncLocal()  // Not already a function local (e.g.: argument)
             && !nodep->varp()->isStatic()  // Not a static variable
             && !nodep->varp()->isClassMember()  // Statically exists in design hierarchy
@@ -193,6 +199,7 @@ class LocalizeVisitor final : public VNVisitor {
             && !nodep->varp()->isVirtIface()  // Not interface pointer
             && !nodep->varp()->valuep()  // Does not have an initializer
         ) {
+            // Collect all candidates including public ones for full analysis
             UINFO(4, "Consider for localization: " << nodep);
             m_varScopeps.push_back(nodep);
         }
@@ -233,6 +240,7 @@ public:
     explicit LocalizeVisitor(AstNetlist* nodep) { iterate(nodep); }
     ~LocalizeVisitor() override {
         V3Stats::addStat("Optimizations, Vars localized", m_statLocVars);
+        V3Stats::addStat("Optimizations, Vars localization blocked by public", m_statSigPublic);
     }
 };
 

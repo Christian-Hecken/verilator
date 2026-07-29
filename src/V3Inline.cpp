@@ -633,42 +633,54 @@ namespace ModuleInliner {
 // alias for the inlined variable, in order to resovle hierarchical references
 // against it later in V3Scope (and also for tracing, which is inserted
 //later). Returns ture iff the given port variable should be inlined,
+// Returns true if the port should be inlined (variable substitution),
 // and false if a continuous assignment should be used.
-bool inlinePort(const AstVar* nodep) {
+// statPortInlineBlockedByRW is incremented only when public_flat_rw is the sole blocker.
+bool inlinePort(const AstVar* nodep, VDouble0& statPortInlineBlockedByRW) {
     // Interface references are always inlined
     if (nodep->isIfaceRef()) return true;
     // Ref ports must be always inlined
     if (nodep->direction() == VDirection::REF) return true;
+
+    // Check all non-public eligibility conditions first
     // Forced signals must not be inlined. The port signal can be
     // forced separately from the connected signals.
     if (nodep->isForced()) return false;
 
-    // Note: For singls marked 'public' (and not 'public_flat') inlining
+    // Note: For signals marked 'public' (and not 'public_flat') inlining
     // of their containing modules is disabled so they wont reach here.
 
+    // Now check public status - if public_flat_rw, this is the sole blocker
     // TODO: For now, writable public signals inside the cell cannot be
     // eliminated as they are entered into the VerilatedScope, and
     // changes would not propagate to it when assigned. (The alias created
     // for them ensures they would be read correctly, but would not
-    // propagate any changes.) This can be removed when the VerialtedScope
+    // propagate any changes.) This can be removed when the VerilatedScope
     // construction in V3EmitCSyms understands aliases.
-    if (nodep->isSigUserRWPublic()) return false;
+    if (nodep->isSigUserRWPublic()) {
+        ++statPortInlineBlockedByRW;
+        return false;
+    }
 
-    // Otherwise we can repalce the variable
+    // Otherwise we can replace the variable
     return true;
 }
 
 // Connect the given port 'nodep' (being inlined into 'modp') to the given
 // expression (from the Cell Pin)
-void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp) {
+void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp,
+                 VDouble0& statPortInlineBlockedByRW, VDouble0& statPortsInlined) {
     UINFO(6, "Connecting " << pinExprp);
     UINFO(6, "        to " << nodep);
 
     // Decide whether to inline the port variable or use continuous assignments
-    const bool inlineIt = inlinePort(nodep);
+    const bool inlineIt = inlinePort(nodep, statPortInlineBlockedByRW);
 
     // If we deccided to inline it, record the expression to substitute this variable with
-    if (inlineIt) nodep->user2p(pinExprp);
+    if (inlineIt) {
+        nodep->user2p(pinExprp);
+        ++statPortsInlined;
+    }
 
     FileLine* const flp = nodep->fileline();
 
@@ -745,7 +757,8 @@ void connectPort(AstNodeModule* modp, AstVar* nodep, AstNodeExpr* pinExprp) {
 }
 
 // Inline 'cellp' into 'modp'. 'last' indicatest this is tha last instance of the inlined module
-void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last, InlineModGraph& graph) {
+void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last, InlineModGraph& graph,
+                VDouble0& statPortInlineBlockedByRW, VDouble0& statPortsInlined) {
     UINFO(5, " Inline Cell  " << cellp);
     UINFO(5, " into Module  " << modp);
 
@@ -797,7 +810,7 @@ void inlineCell(AstNodeModule* modp, AstCell* cellp, bool last, InlineModGraph& 
         AstNodeExpr* const pinExprp = VN_AS(pinp->exprp(), NodeExpr);
 
         // Connect up the port
-        connectPort(modp, newModVarp, pinExprp);
+        connectPort(modp, newModVarp, pinExprp, statPortInlineBlockedByRW, statPortsInlined);
     }
 
     // Cleanup var names, etc, to not conflict, relink replaced variables, adjust graph
@@ -825,8 +838,10 @@ void process(AstNetlist* netlistp, InlineModGraph& graph) {
     const VNUser1InUse user1InUse;
     const VNUser3InUse user3InUse;
 
-    // Number of inlined instances, for statistics
+    // Statistics
     VDouble0 m_nInlined;
+    VDouble0 m_statPortsInlined;
+    VDouble0 m_statPortInlineBlockedByRW;
 
     // Gather all cells that need to be inlined (this is in topological order)
     std::vector<InlineModCellVertex*> cVtxps;
@@ -865,11 +880,15 @@ void process(AstNetlist* netlistp, InlineModGraph& graph) {
         }
 
         // Do it
-        inlineCell(mVtx.modp(), cellp, last, graph);
+        inlineCell(mVtx.modp(), cellp, last, graph, m_statPortInlineBlockedByRW,
+                   m_statPortsInlined);
         if (dumpGraphLevel() >= 9) graph.dumpDotFilePrefixed("inlinemod-cell");
     }
 
     V3Stats::addStat("Optimizations, Inlined instances", m_nInlined);
+    V3Stats::addStat("Optimizations, Inline ports inlined", m_statPortsInlined);
+    V3Stats::addStat("Optimizations, Inline ports blocked by public_flat_rw",
+                     m_statPortInlineBlockedByRW);
 
     // Clean up AstIfaceRefDType references
     // If the cell has been removed let's make sure we don't leave a

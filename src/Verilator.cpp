@@ -196,6 +196,12 @@ static void process() {
         // that weren't captured earlier. Must run before V3Dead deletes template modules.
         V3LinkDotIfaceCapture::finalizeIfaceCapture();
 
+        // Clear deduplication state for both V3Dead and V3Life at start of compilation
+        // This must happen before any pass invocations to prevent state leakage across
+        // compilations
+        V3Dead::deadAllClear();
+        V3Life::lifeAllClear();
+
         // Remove any modules that were parameterized and are no longer referenced.
         V3Dead::deadifyModules(v3Global.rootp());
 

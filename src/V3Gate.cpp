@@ -682,7 +682,7 @@ class GateInline final {
             if (!vVtxp->inSize1()) continue;
 
             // Can't inline if non-reducible, etc
-            if (!vVtxp->reducible()) continue;
+            if (!vVtxp->reducible()) { continue; }
 
             // Grab the driving logic
             GateLogicVertex* const lVtxp

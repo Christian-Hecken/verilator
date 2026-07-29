@@ -35,6 +35,46 @@
 VL_DEFINE_DEBUG_FUNCTIONS;
 
 //######################################################################
+// Compilation-scoped state for deduplication across multiple V3Life invocations
+
+class LifeGlobalState final {
+    // Track blocked assignment deletions and constant propagations across both V3Life invocations
+    // Uses pointer identity which is stable within one compilation and safe because state is
+    // cleared at compilation start.
+    std::unordered_set<const AstNodeStmt*> m_blockedAssignDeletions;
+    std::unordered_set<const AstVarRef*> m_blockedConstPropagations;
+
+public:
+    LifeGlobalState() = default;
+    ~LifeGlobalState() = default;
+    VL_UNCOPYABLE(LifeGlobalState);
+
+    bool markAssignDeletionBlockedIfNew(const AstNodeStmt* assp) {
+        // Returns true if this is the first time we're counting this assignment as blocked.
+        // Uses pointer identity: each AstNodeStmt representing a deletable assignment is a
+        // distinct object during compilation, so pointer addresses uniquely identify
+        // assignment deletion opportunities without collision.
+        return m_blockedAssignDeletions.insert(assp).second;
+    }
+
+    bool markConstPropBlockedIfNew(const AstVarRef* refp) {
+        // Returns true if this is the first time we're counting this reference as blocked.
+        // Uses pointer identity: each AstVarRef representing a propagatable reference is a
+        // distinct object during compilation, so pointer addresses uniquely identify
+        // constant propagation opportunities without collision.
+        return m_blockedConstPropagations.insert(refp).second;
+    }
+
+    void clear() {
+        m_blockedAssignDeletions.clear();
+        m_blockedConstPropagations.clear();
+    }
+};
+
+// Global state for the current compilation - cleared at start of each compilation
+static LifeGlobalState s_lifeGlobalState;
+
+//######################################################################
 // Structure for global state
 
 class LifeState final {
@@ -44,14 +84,20 @@ class LifeState final {
 
     // STATE
 public:
-    VDouble0 m_statAssnDel;  // Statistic tracking
-    VDouble0 m_statAssnCon;  // Statistic tracking
+    VDouble0 m_statAssnDel;  // Statistic tracking - assignments deleted
+    VDouble0 m_statAssnCon;  // Statistic tracking - constant propagations performed
+    VDouble0 m_statAssnDelBlockedByPublic;  // Assignment deletions blocked by public
+    VDouble0 m_statAssnConBlockedByPublic;  // Constant propagations blocked by public
 
     // CONSTRUCTORS
     LifeState() = default;
     ~LifeState() {
         V3Stats::addStatSum("Optimizations, Lifetime assign deletions", m_statAssnDel);
+        V3Stats::addStatSum("Optimizations, Lifetime assign deletions blocked by public",
+                            m_statAssnDelBlockedByPublic);
         V3Stats::addStatSum("Optimizations, Lifetime constant prop", m_statAssnCon);
+        V3Stats::addStatSum("Optimizations, Lifetime constant prop blocked by public",
+                            m_statAssnConBlockedByPublic);
     }
 };
 
@@ -143,13 +189,21 @@ public:
     // METHODS
     void checkRemoveAssign(const AstVarScope* vscp, LifeVarEntry& entr) {
         const AstVar* const varp = vscp->varp();
-        // We don't optimize any public sigs
-        if (varp->isSigPublic()) return;
-        if (varp->isReadByDpi()) return;
-        if (varp->sensIfacep()) return;
         // Check the var entry, and remove if appropriate
         AstNodeStmt* const oldassp = entr.assignp();
         if (!oldassp) return;
+        // Check non-public conditions first
+        if (varp->isReadByDpi()) return;
+        if (varp->sensIfacep()) return;
+        // Now check public status - if public, this is the sole blocker
+        if (varp->isSigPublic()) {
+            // Only count each unique assignment deletion opportunity once across all V3Life
+            // invocations
+            if (s_lifeGlobalState.markAssignDeletionBlockedIfNew(oldassp)) {
+                ++m_statep->m_statAssnDelBlockedByPublic;
+            }
+            return;
+        }
         UINFO(7, "       PREV: " << oldassp);
         // Redundant assignment, in same level block
         // Don't delete it now as it will confuse iteration since it maybe WAY
@@ -188,8 +242,17 @@ public:
             entr.init(false);
         } else {
             if (AstConst* const constp = entr.constNodep()) {
-                if (!varrefp->varp()->isSigPublic() && !varrefp->varp()->isWrittenByDpi()
-                    && !varrefp->varp()->isVirtIface()) {
+                // Check non-public conditions first
+                if (varrefp->varp()->isWrittenByDpi() || varrefp->varp()->isVirtIface()) {
+                    // Ineligible for other reasons
+                } else if (varrefp->varp()->isSigPublic()) {
+                    // Would propagate except it's public - sole blocker
+                    // Only count each unique propagation opportunity once across all V3Life
+                    // invocations
+                    if (s_lifeGlobalState.markConstPropBlockedIfNew(varrefp)) {
+                        ++m_statep->m_statAssnConBlockedByPublic;
+                    }
+                } else {
                     // Aha, variable is constant; substitute in.
                     // We'll later constant propagate
                     UINFO(4, "     replaceconst: " << varrefp);
@@ -515,4 +578,9 @@ void V3Life::lifeAll(AstNetlist* nodep) {
     }  // Destruct before checking
     VIsCached::clearCacheTree();  // Removing assignments may affect isPure
     V3Global::dumpCheckGlobalTree("life", 0, dumpTreeEitherLevel() >= 3);
+}
+
+void V3Life::lifeAllClear() {
+    // Called at start of compilation to reset deduplication state
+    s_lifeGlobalState.clear();
 }
