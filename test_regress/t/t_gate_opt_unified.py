@@ -11,10 +11,12 @@ import vltest_bootstrap
 
 test.scenarios('simulator')
 
-test.compile(
-    make_top_shell=False,
-    make_main=False,
-    verilator_flags2=["--exe", "--vpi", "--public-flat-rw", "--timing", "--stats", "t/t_gate_opt_unified.cpp"])
+test.compile(make_top_shell=False,
+             make_main=False,
+             verilator_flags2=[
+                 "--exe", "--vpi", "--public-flat-rw", "--timing", "--stats",
+                 "t/t_gate_opt_unified.cpp"
+             ])
 
 test.execute()
 
