@@ -19,7 +19,10 @@ test.execute()
 # Forced check happens before public check in isForced() condition
 # Loop variable i can still be bound: initial + 3 increments = 4 bindings
 # Variable x assignments blocked by force (not counted as public block): 0 blocked by public
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)', 4)
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 0)
+test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)',
+               4)
+test.file_grep(
+    test.stats,
+    r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 0)
 
 test.passes()

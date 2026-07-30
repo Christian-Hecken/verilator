@@ -12,6 +12,7 @@ test.compile(verilator_flags2=['--stats'])
 test.execute()
 
 # Public_flat_rw blocks assignment deletion
-test.file_grep(test.stats, r'Optimizations, Lifetime assign deletions blocked by public\s+(\d+)', 1)
+test.file_grep(test.stats, r'Optimizations, Lifetime assign deletions blocked by public\s+(\d+)',
+               1)
 
 test.passes()

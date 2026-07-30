@@ -4,7 +4,7 @@
 
 This document reports the implementation of precise performance counters for public signal blocking in Verilator optimization passes. The work adds exact transformation-level instrumentation with sole-blocker attribution and deduplication across multiple pass invocations, enabling accurate performance analysis and regression detection.
 
----
+______________________________________________________________________
 
 ## Precisely Instrumented Transformations
 
@@ -13,6 +13,7 @@ The following passes now provide exact performed/blocked counter pairs with sole
 ### 1. V3Dead: Dead Variable Elimination
 
 **Counters:**
+
 - `Optimizations, Dead variables eliminated` (performed)
 - `Optimizations, Dead variables blocked by public` (blocked)
 
@@ -27,17 +28,19 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Sole-Blocker Rule:** Public check occurs after verifying the variable is actually dead (unused). A variable increments the blocked counter only when public visibility is the sole reason for retention.
 
 **Tests:**
+
 - `t_stats_dead_nonpublic.{v,py}` — Non-public baseline (1 eliminated, 0 blocked)
 - `t_stats_dead_public.{v,py}` — Public variant (0 eliminated, 1 blocked)
 - `t_stats_dead_public_used.{v,py}` — Independent rejection: used + public (0 eliminated, 0 blocked)
 
 **Status:** ✅ Complete with passing tests and deduplication
 
----
+______________________________________________________________________
 
 ### 2. V3Life: Lifetime Assignment Deletion
 
 **Counters:**
+
 - `Optimizations, Lifetime assign deletions` (performed)
 - `Optimizations, Lifetime assign deletions blocked by public` (blocked)
 
@@ -54,17 +57,19 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Pass Behavior:** V3Life runs twice per compilation (lines 406 and 495 in Verilator.cpp). Deduplication ensures each unique assignment opportunity is counted once across both passes.
 
 **Tests:**
+
 - `t_stats_life_assn_nonpublic.{v,py}` — Non-public baseline (1 deleted, 0 blocked)
 - `t_stats_life_assn_public.{v,py}` — Public variant (0 deleted, 1 blocked)
 - `t_stats_life_assn_independent.{v,py}` — Independent rejection: DPI read + public (0 deleted, 0 blocked)
 
 **Status:** ✅ Complete with passing tests and deduplication
 
----
+______________________________________________________________________
 
 ### 3. V3Life: Lifetime Constant Propagation
 
 **Counters:**
+
 - `Optimizations, Lifetime constant prop` (performed)
 - `Optimizations, Lifetime constant prop blocked by public` (blocked)
 
@@ -81,17 +86,19 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Pass Behavior:** Runs twice per compilation with deduplication ensuring each unique opportunity is counted once.
 
 **Tests:**
+
 - `t_stats_life_const_nonpublic.{v,py}` — Non-public baseline (1 propagated, 0 blocked)
 - `t_stats_life_const_public.{v,py}` — Public variant (0 propagated, 1 blocked)
 - `t_stats_life_const_independent.{v,py}` — Independent rejection: DPI write + public (0 propagated, 0 blocked)
 
 **Status:** ✅ Complete with passing tests and deduplication
 
----
+______________________________________________________________________
 
 ### 4. V3Localize: Variable Localization
 
 **Counters:**
+
 - `Optimizations, Vars localized` (performed)
 - `Optimizations, Vars localization blocked by public` (blocked)
 
@@ -104,6 +111,7 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Sole-Blocker Rule:** Public check occurs after all non-public eligibility conditions (optimizability, accessor count, leaf-function requirement). A variable increments the blocked counter only when public visibility is the sole reason for rejection.
 
 **Tests:**
+
 - `t_stats_localize_nonpublic.{v,py}` — Non-public baseline (1 localized, 0 blocked)
 - `t_stats_localize_public.{v,py}` — Public variant (0 localized, 1 blocked)
 - `t_stats_localize_public_rd.{v,py}` — Read-only public (0 localized, 1 blocked)
@@ -111,11 +119,12 @@ The following passes now provide exact performed/blocked counter pairs with sole
 
 **Status:** ✅ Complete with passing tests
 
----
+______________________________________________________________________
 
 ### 5. V3Inline: Port Substitution
 
 **Counters:**
+
 - `Optimizations, Inline ports inlined` (performed)
 - `Optimizations, Inline ports blocked by public_flat_rw` (blocked)
 
@@ -128,6 +137,7 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Sole-Blocker Rule:** Public RW check occurs after all non-public eligibility conditions. A port increments the blocked counter only when RW public visibility is the sole reason for rejection.
 
 **Tests:**
+
 - `t_stats_inline_port_nonpublic.{v,py}` — Non-public baseline (1 inlined, 0 blocked)
 - `t_stats_inline_port_public_rd.{v,py}` — Read-only public (1 inlined, 0 blocked)
 - `t_stats_inline_port_public_rw.{v,py}` — Read-write public (0 inlined, 1 blocked)
@@ -135,11 +145,12 @@ The following passes now provide exact performed/blocked counter pairs with sole
 
 **Status:** ✅ Complete with passing tests
 
----
+______________________________________________________________________
 
 ### 6. V3Unroll: Constant Binding Creation
 
 **Counters:**
+
 - `Optimizations, Const bindings created` (performed)
 - `Optimizations, Const bindings blocked by public_flat_rw` (blocked)
 
@@ -152,6 +163,7 @@ The following passes now provide exact performed/blocked counter pairs with sole
 **Sole-Blocker Rule:** Public RW check occurs after verifying no existing binding and checking forced status. A binding increments the blocked counter only when RW public visibility is the sole reason for rejection.
 
 **Tests:**
+
 - `t_stats_unroll_nonpublic.{v,py}` — Non-public baseline (1 created, 0 blocked)
 - `t_stats_unroll_public_rd.{v,py}` — Read-only public (1 created, 0 blocked)
 - `t_stats_unroll_public_rw.{v,py}` — Read-write public (0 created, 1 blocked)
@@ -160,7 +172,7 @@ The following passes now provide exact performed/blocked counter pairs with sole
 
 **Status:** ✅ Complete with passing tests
 
----
+______________________________________________________________________
 
 ## Excluded Optimizations
 
@@ -172,7 +184,7 @@ The following passes were evaluated but excluded from precise instrumentation du
 
 **Current Behavior:** No public-specific counters. General gate optimization statistics remain available.
 
----
+______________________________________________________________________
 
 ### V3Inline: Module Instance Inlining
 
@@ -180,7 +192,7 @@ The following passes were evaluated but excluded from precise instrumentation du
 
 **Current Behavior:** No public-specific counters. General module inlining statistics remain available.
 
----
+______________________________________________________________________
 
 ### V3DfgOptimizer: Dataflow Graph Optimization
 
@@ -188,19 +200,21 @@ The following passes were evaluated but excluded from precise instrumentation du
 
 **Current Behavior:** No public-specific counters. General DFG optimization statistics remain available.
 
----
+______________________________________________________________________
 
 ## Implementation Details
 
 ### Deduplication Mechanism
 
 **V3Dead:**
+
 - Uses compilation-scoped global state (`DeadGlobalState`)
 - Identity: pointer identity (`const AstVar*`)
 - Cleared at compilation start via `V3Dead::deadAllClear()` in `Verilator.cpp`
 - Persists across all deadify invocations in one compilation
 
 **V3Life:**
+
 - Uses compilation-scoped global state (`LifeGlobalState`)
 - Assignment deletion identity: pointer identity (`const AstNodeStmt*`)
 - Constant propagation identity: pointer identity (`const AstVarRef*`)
@@ -210,6 +224,7 @@ The following passes were evaluated but excluded from precise instrumentation du
 ### Counter Naming Convention
 
 All counter names follow the exact format used in source code:
+
 - `Optimizations, Dead variables eliminated`
 - `Optimizations, Dead variables blocked by public`
 - `Optimizations, Lifetime assign deletions`
@@ -226,6 +241,7 @@ All counter names follow the exact format used in source code:
 ### Test Coverage
 
 All instrumented transformations have complete test coverage:
+
 - Non-public baseline (performed > 0, blocked = 0)
 - Public variant (performed = 0, blocked > 0)
 - Independent rejection where applicable (performed = 0, blocked = 0)
@@ -233,13 +249,14 @@ All instrumented transformations have complete test coverage:
 
 Total test files: 22 focused tests covering all six instrumented transformation pairs.
 
----
+______________________________________________________________________
 
 ## Usage
 
 ### Viewing Statistics
 
 Run Verilator with `--stats` flag:
+
 ```bash
 verilator --stats <other_flags> <design.v>
 ```
@@ -249,13 +266,15 @@ Statistics are written to `<output_dir>/<prefix>__stats.txt`.
 ### Interpreting Results
 
 For each instrumented transformation:
+
 1. **Performed counter** = successful transformations
-2. **Blocked counter** = opportunities blocked solely by public visibility
-3. **Total opportunities** = performed + blocked (for equivalent designs)
+1. **Blocked counter** = opportunities blocked solely by public visibility
+1. **Total opportunities** = performed + blocked (for equivalent designs)
 
 ### Performance Analysis
 
 Compare non-public and public variants of the same design:
+
 ```
 Non-public: performed = N, blocked = 0
 Public:     performed = 0, blocked = N
@@ -263,31 +282,31 @@ Public:     performed = 0, blocked = N
 
 The blocked count quantifies the optimization cost of public visibility.
 
----
+______________________________________________________________________
 
 ## Limitations
 
 1. **Deduplication scope:** Limited to single compilation. Cross-compilation analysis requires external aggregation.
 
-2. **Independent rejection:** When multiple conditions block a transformation (e.g., public + DPI), neither counter increments. This is correct behavior for sole-blocker attribution.
+1. **Independent rejection:** When multiple conditions block a transformation (e.g., public + DPI), neither counter increments. This is correct behavior for sole-blocker attribution.
 
-3. **Compiler-generated variables:** Some passes (e.g., V3Dead) may count compiler-generated public variables (DPI infrastructure, timing support). This is expected and reflects actual blocking behavior.
+1. **Compiler-generated variables:** Some passes (e.g., V3Dead) may count compiler-generated public variables (DPI infrastructure, timing support). This is expected and reflects actual blocking behavior.
 
-4. **Pass-specific semantics:** Each pass defines its own transformation unit and counting rules. Cross-pass comparisons require understanding these semantics.
+1. **Pass-specific semantics:** Each pass defines its own transformation unit and counting rules. Cross-pass comparisons require understanding these semantics.
 
----
+______________________________________________________________________
 
 ## Future Work
 
 1. **Cross-compilation aggregation:** Tool to aggregate statistics across multiple compilations for large-scale analysis.
 
-2. **Hierarchical attribution:** Break down blocked counts by module/hierarchy level for targeted optimization.
+1. **Hierarchical attribution:** Break down blocked counts by module/hierarchy level for targeted optimization.
 
-3. **Additional passes:** Evaluate other optimization passes for precise instrumentation feasibility.
+1. **Additional passes:** Evaluate other optimization passes for precise instrumentation feasibility.
 
-4. **Performance impact:** Measure runtime overhead of deduplication and statistics collection.
+1. **Performance impact:** Measure runtime overhead of deduplication and statistics collection.
 
----
+______________________________________________________________________
 
 ## References
 

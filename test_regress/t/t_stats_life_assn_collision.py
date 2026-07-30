@@ -14,6 +14,7 @@ test.execute()
 # Two distinct deletable assignments in separate modules
 # Both are blocked by public_flat_rw
 # Pointer identity correctly counts them as 2 separate blocked opportunities
-test.file_grep(test.stats, r'Optimizations, Lifetime assign deletions blocked by public\s+(\d+)', 2)
+test.file_grep(test.stats, r'Optimizations, Lifetime assign deletions blocked by public\s+(\d+)',
+               2)
 
 test.passes()

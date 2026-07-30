@@ -18,7 +18,10 @@ test.execute()
 # Public_flat_rw variable blocks const binding for x assignments
 # Loop variable i can still be bound: initial + 3 increments = 4 bindings
 # Variable x assignments are blocked: 3 blocked
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)', 4)
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 3)
+test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)',
+               4)
+test.file_grep(
+    test.stats,
+    r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 3)
 
 test.passes()

@@ -17,7 +17,10 @@ test.execute()
 
 # Public_flat_rd does NOT block const binding (only public_flat_rw blocks)
 # All bindings succeed: i (4) + x (3) = 7 total
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)', 7)
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 0)
+test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const bindings created\s+(\d+)',
+               7)
+test.file_grep(
+    test.stats,
+    r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)', 0)
 
 test.passes()

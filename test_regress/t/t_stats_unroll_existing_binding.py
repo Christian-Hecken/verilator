@@ -13,6 +13,8 @@ test.execute()
 
 # Public_flat_rw prevents binding creation
 # Verify blocked counter is present
-test.file_grep(test.stats, r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)')
+test.file_grep(
+    test.stats,
+    r'Optimizations, Loop unrolling, Unroll const-fold blocked by public_flat_rw\s+(\d+)')
 
 test.passes()
